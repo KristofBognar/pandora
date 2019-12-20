@@ -1,5 +1,5 @@
 % function [table_out,scan_times,start_times,end_times]=...
-%             pan_dscd_for_heipro( table_in, savedir, out_type )
+%             pan_dscd_for_heipro( table_in, savedir, out_type, split_scans )
 %INSERT_90 Insert 90 deg measurements into QDOAS output files for Pandora data
 %
 % Reads Pandora MAX-DOAS table and breaks it up by day/week/month
@@ -11,15 +11,15 @@
 % (or 50) deg measurements at the start and end of the scans
 %       - first and last line are extrapolated
 %
-%?? Scans across midnight are most likely deleted since retrieval requires
-%?? data for a single day (we have daily sonde and BrO a priori)
-%
-%?? Code assumes that scans are in descending order by elevation angle!
-%   
+%%   
 % INPUT:    table_in: MAX-DOAS dSCD file (straight from QDOAS), imported as a
 %               matlab table
 %           savedir: directory where output files will be saved
-%           out_type: 'day' or 'month' for daily or monthly files
+%           out_type: 'day', 'week', or 'month' for daily, weekly or monthly files
+%           split_scans: 0 to write all scans into one file
+%                        1 to separate short and long scans into different files
+%                        2 to do 1 and 2 at the same time
+%                        
 %
 % OUTPUT:   daily/weekly/monthly dSCD files with dummy 90 deg lines inserted
 %           table_out: full dSCD table with dummy 90 deg lines inserted
@@ -243,7 +243,7 @@ for j=1:length(ind90)
 
         % check if we're in the middle of a scan -- nothing should be inserted there
         % scans end with 30, 40, or 50deg meas.: one scan might be
-        % incomplete, but it neither end of the gap is 30 or above, then
+        % incomplete, but if neither end of the gap is 30 or above, then
         % it's likely a missed elevation angle
         if table_in.Elevviewingangle(ind90(j))<30 && table_in.Elevviewingangle(ind90(j))<30
             continue
@@ -257,7 +257,7 @@ for j=1:length(ind90)
         % average spectra details, replace necessary entries below
         table_in(ind90(j),1:8)=num2cell(mean(table_in{ind90(j)-1:2:ind90(j)+1,1:8}));
 
-        % fix spectrume number and solar azimuth
+        % fix spectrum number and solar azimuth
         table_in.SpecNo(ind90(j))=round(table_in.SpecNo(ind90(j)));        
         if table_in.SpecNo(ind90(j)) < table_in.SpecNo(ind90(j)-1),
             table_in.SpecNo(ind90(j)) = table_in.SpecNo(ind90(j)-1)+1;
@@ -435,6 +435,51 @@ end
 table_out=table_in;
 
 
+%% separate long and short scans, if required
+% short scans:       30,   15,         2,1
+% long scans:  50,40,30,20,15,10,8,5,3,2,1
+
+% add temporary column to indicate scan length 
+% long: idexed as 1
+% short: indexed as -1
+% 90 deg: indexed as 0 (included in both)
+table_in.longscan=zeros(size(table_out.Elevviewingangle));
+table_in.shortscan=zeros(size(table_out.Elevviewingangle));
+
+if split_scans
+    
+    % redo zenith rows index
+    ind90=find(table_in.Elevviewingangle==90);
+
+    % tag each measurement
+    longscan=[];
+    shortscan=[];
+
+    for i=1:length(ind90)-1
+
+        % elevs in between 90 deg measurements
+        curr_ind=ind90(i)+1:ind90(i+1)-1;
+        tmp=table_in.Elevviewingangle(curr_ind);
+
+        if any(ismember(tmp,[50,40,20,10,8,5,3])) % elevs that only appear in long scans
+            longscan=[longscan;curr_ind'];
+        else
+            shortscan=[shortscan;curr_ind'];
+        end
+    end
+    
+    % include 90 deg before/after each scan
+    longscan=union(longscan,longscan+1);
+    longscan=union(longscan,longscan-1);
+    shortscan=union(shortscan,shortscan+1);
+    shortscan=union(shortscan,shortscan-1);
+
+    % save indices in data table
+    table_in.longscan(longscan)=1;
+    table_in.shortscan(shortscan)=1;
+
+end
+
 %% write files
 
 if ~exist(savedir,'dir'), mkdir(savedir); end
@@ -448,10 +493,7 @@ switch out_type
         tmp=month(table_in.DateTime);
 end
      
-start_times=[];
-end_times=[];
-
-% loop over days/months
+% loop over days/weeks/months
 for i=unique(tmp)'
 
     % select data from given day
@@ -467,29 +509,82 @@ for i=unique(tmp)'
 
     to_write=to_write(ind(1):ind(end),:);
 
-    % save start/end times 
-    start_times=[start_times;to_write.DateTime(1)];
-    end_times=[end_times;to_write.DateTime(end)];
-
     % write files
-    yyyy=num2str(year(to_write.DateDDMMYYYY(1)));
-    mm=num2str(month(to_write.DateDDMMYYYY(1)));
-    dd=num2str(day(to_write.DateDDMMYYYY(1)));
-    
-    if length(mm)==1, mm=['0' mm]; end
-    if length(dd)==1, dd=['0' dd]; end
-    
-    switch out_type
-        case 'day' 
-            fname=[savedir 'DSCD_' yyyy '_' mm '_' dd '.dat'];
-        case 'week' 
-            fname=[savedir 'DSCD_' yyyy '_week_' num2str(i) '.dat'];
-        case 'month'
-            fname=[savedir 'DSCD_' yyyy '_' mm '.dat'];
+    if split_scans
+        
+        %%% long scans
+        to_write_tmp=to_write(to_write.longscan==1,:);
+        
+        yyyy=num2str(year(to_write_tmp.DateDDMMYYYY(1)));
+        mm=num2str(month(to_write_tmp.DateDDMMYYYY(1)));
+        dd=num2str(day(to_write_tmp.DateDDMMYYYY(1)));
+
+        if length(mm)==1, mm=['0' mm]; end
+        if length(dd)==1, dd=['0' dd]; end
+
+        switch out_type
+            case 'day' 
+                fname=[savedir 'DSCD_' yyyy '_' mm '_' dd '_long.dat'];
+            case 'week' 
+                fname=[savedir 'DSCD_' yyyy '_week_' num2str(i) '_long.dat'];
+            case 'month'
+                fname=[savedir 'DSCD_' yyyy '_' mm '_long.dat'];
+        end
+
+        to_write_tmp.longscan=[];
+        to_write_tmp.shortscan=[];
+        writetable(to_write_tmp,fname,'Delimiter',',');
+        
+        %%% short scans
+        to_write_tmp=to_write(to_write.shortscan==1,:);
+        
+        yyyy=num2str(year(to_write_tmp.DateDDMMYYYY(1)));
+        mm=num2str(month(to_write_tmp.DateDDMMYYYY(1)));
+        dd=num2str(day(to_write_tmp.DateDDMMYYYY(1)));
+
+        if length(mm)==1, mm=['0' mm]; end
+        if length(dd)==1, dd=['0' dd]; end
+
+        switch out_type
+            case 'day' 
+                fname=[savedir 'DSCD_' yyyy '_' mm '_' dd '_short.dat'];
+            case 'week' 
+                fname=[savedir 'DSCD_' yyyy '_week_' num2str(i) '_short.dat'];
+            case 'month'
+                fname=[savedir 'DSCD_' yyyy '_' mm '_short.dat'];
+        end
+
+        to_write_tmp.longscan=[];
+        to_write_tmp.shortscan=[];
+        writetable(to_write_tmp,fname,'Delimiter',',');
+        
     end
     
-    writetable(to_write,fname,'Delimiter',',');
+    if split_scans~=1
+        % write all scans in one file
+        
+        yyyy=num2str(year(to_write.DateDDMMYYYY(1)));
+        mm=num2str(month(to_write.DateDDMMYYYY(1)));
+        dd=num2str(day(to_write.DateDDMMYYYY(1)));
 
+        if length(mm)==1, mm=['0' mm]; end
+        if length(dd)==1, dd=['0' dd]; end
+
+        switch out_type
+            case 'day' 
+                fname=[savedir 'DSCD_' yyyy '_' mm '_' dd '.dat'];
+            case 'week' 
+                fname=[savedir 'DSCD_' yyyy '_week_' num2str(i) '.dat'];
+            case 'month'
+                fname=[savedir 'DSCD_' yyyy '_' mm '.dat'];
+        end
+
+        to_write.longscan=[];
+        to_write.shortscan=[];
+        writetable(to_write,fname,'Delimiter',',');
+
+    end
+        
 end
         
 % % % end

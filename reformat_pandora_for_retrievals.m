@@ -1,6 +1,6 @@
-% function [table_out,scan_times,start_times,end_times]=...
-%             pan_dscd_for_heipro( table_in, savedir, out_type, split_scans )
-%INSERT_90 Insert 90 deg measurements into QDOAS output files for Pandora data
+function [pan_maxdoas_processed,scan_times]=...
+            reformat_pandora_for_retrievals( p_num, uvvis, year, savedir )
+%Insert 90 deg measurements into QDOAS output files for Pandora data
 %
 % Reads Pandora MAX-DOAS table and breaks it up by day/week/month
 %
@@ -11,28 +11,42 @@
 % (or 50) deg measurements at the start and end of the scans
 %       - first and last line are extrapolated
 %
-%%   
-% INPUT:    table_in: MAX-DOAS dSCD file (straight from QDOAS), imported as a
-%               matlab table
-%           savedir: directory where output files will be saved
-%           out_type: 'day', 'week', or 'month' for daily, weekly or monthly files
-%           split_scans: 0 to write all scans into one file
-%                        1 to separate short and long scans into different files
-%                        2 to do 1 and 2 at the same time
-%                        
+% Pandora measurements have two scanning modes:
+%           30,     15,              2, 1, and up (tagged as shortscan==1)
+%   50, 40, 30, 20, 15, 10, 8, 5, 3, 2, 1, and up (tagged as longscan==1)
+%   90 deg dummies in between short and long scans are tagged as belonging
+%   to both, to make separating scan types easier
 %
-% OUTPUT:   daily/weekly/monthly dSCD files with dummy 90 deg lines inserted
-%           table_out: full dSCD table with dummy 90 deg lines inserted
+%%   
+% INPUT:    p_num: pandora instrument number
+%           uvvis: 'uv' for UV data, 'vis' for visible data
+%           year: year to process
+%           savedir (optional): if provided, pan_maxdoas_processed and scan_times are saved here
+%
+% OUTPUT:   pan_maxdoas_processed: full dSCD table with dummy 90 deg lines inserted
 %               (includes scans across file boundaries that were not written out)
 %           scan_times: scan lengths (90 to next 90)
 %
 %
 % Kristof Bognar, August 2019
 
-%%%%%% Make sure QDOAS files are read by read_maxdoas_table_pandora.m,
-%%%%%% there are some inportent filters/format changes in there
+disp('Make sure QDOAS files are read by read_maxdoas_table_pandora.m,')
+disp('there are some important filters/format changes in there')
+
 
 %% setup
+% load QDOAS data (has to be reformatted by read_maxdoas_table_pandora.m first)
+filename=['Pandora_' num2str(p_num) '_' uvvis '_' num2str(year) '.mat'];
+filedir='/home/kristof/work/PANDORA/profiling_test/QDOAS_output/';
+
+try
+    load([filedir filename]);
+    table_in=data;
+    clearvars data
+catch
+    error('Read QDOAS files using read_maxdoas_table_pandora.m')
+end
+
 % find first retrieval column (measurement info columns come first; assume
 % that first retrieval window is O3)
 % general info columns might change as people add columns with extra info
@@ -64,10 +78,15 @@ try
 catch
     error('Check if files were processed the same way as in read_maxdoas_table_pandora.m (DateTime column missing)')
 end
+
 % gap tolerance
 % max accepted time difference between consecutive measurements -- if time
 % is greater, it's considered a gap
+% there are frequent 5-15 min gaps when direct sun measurements are made,
+% 90deg dummies are inserted in the middle of these short gaps, slightliy far
+% from the next scan (should be OK for HEIPRO, doesn't matter for MAPA)
 gap_tolerance=30/(24*60); % 30 minutes, converted to days
+disp(['Using ' num2str(gap_tolerance*(24*60)) ' min as cutoff for data gaps'])
 
 % round angles to nearest integer (done by read_maxdoas_table_pandora.m)
 % table_in.Elevviewingangle=round(table_in.Elevviewingangle);
@@ -164,8 +183,7 @@ if ~isempty(ind90_gap) && (size(table_in,1)-ind90_gap(end)<2)
     end    
 end
 
-% make sure there's enough measurements at the end of the day to
-% interpolate dummy times
+% make sure there's enough measurements at the end of the dataset to interpolate dummy times
 if length(ind90)>1 && ind90(end)==size(table_in,1) 
     % ind90 indicates start of scan
     % only one measurement in last scan: delete measurement and index
@@ -245,7 +263,7 @@ for j=1:length(ind90)
         % scans end with 30, 40, or 50deg meas.: one scan might be
         % incomplete, but if neither end of the gap is 30 or above, then
         % it's likely a missed elevation angle
-        if table_in.Elevviewingangle(ind90(j))<30 && table_in.Elevviewingangle(ind90(j))<30
+        if table_in.Elevviewingangle(ind90(j)-1)<30 && table_in.Elevviewingangle(ind90(j))<30
             continue
         end
         
@@ -345,9 +363,9 @@ scan_times(remove)=[];
 ind(remove)=[];
 
 %% deal with exceptions
-% any gap left that's longer than 30 min is a scan with no zenith measurements
+% any gap left that's longer than the gap tolerance is a scan with no zenith measurements
 % some 'zenith' measurements have elev angles of <80, not used as reference in QDOAS
-tmp=find(scan_times>minutes(30));
+tmp=find(scan_times>minutes(gap_tolerance*(24*60))); % convert gap_tolerance to min from days
 
 if ~isempty(tmp)
     disp('')
@@ -358,22 +376,26 @@ if ~isempty(tmp)
         bad_ranges(i,:)=[ind(tmp(i)),ind(tmp(i)+1)];
     end
     
-    % check off angle zenith measurements
+    % check for off-angle zenith measurements
     
     elevs=unique(table_in.Elevviewingangle)';
     bad_elevs=setdiff(elevs,elevs_expected);
     
     disp('Start/stop indices of bad scans:')
     disp(bad_ranges)
-    disp('Indices of bad elevation angles:')
     
-    for i=1:length(bad_elevs)
-        disp(['elev: ' num2str(bad_elevs(i))])
-        disp(find(table_in.Elevviewingangle==bad_elevs(i)))
-        % check if all bad elev angles are within the bad scans?
+    if ~isempty(bad_elevs)
+        disp('Indices of bad elevation angles:')
+
+        for i=1:length(bad_elevs)
+            disp(['elev: ' num2str(bad_elevs(i))])
+            disp(find(table_in.Elevviewingangle==bad_elevs(i)))
+            % check if all bad elev angles are within the bad scans?
+        end
     end
     
     % delete bad scans
+    bad_inds=[];
     for i=1:size(bad_ranges,1)
         % make sure a 90deg measurement is left at each end
         if table_in.Elevviewingangle(bad_ranges(i,1)-1)~=90
@@ -383,8 +405,10 @@ if ~isempty(tmp)
             bad_ranges(i,2)=bad_ranges(i,2)-1;
         end
         
-        table_in(bad_ranges(i,1):bad_ranges(i,2),:)=[];
+        bad_inds=[bad_inds,bad_ranges(i,1):bad_ranges(i,2)];
     end
+    
+    table_in(bad_inds,:)=[];    
     
     disp('')
     disp('Deleted bad scans')
@@ -415,7 +439,7 @@ if ~isempty(tmp)
     scan_times(remove)=[];
     ind(remove)=[];
     
-else % no scans >30 min, check for bad elevs anyway
+else % no scans >gap tolerance, check for bad elevs anyway
     
     elevs=unique(table_in.Elevviewingangle)';
     bad_elevs=setdiff(elevs,elevs_expected);
@@ -432,10 +456,7 @@ else % no scans >30 min, check for bad elevs anyway
 end
 
 
-table_out=table_in;
-
-
-%% separate long and short scans, if required
+%% separate long and short scans
 % short scans:       30,   15,         2,1
 % long scans:  50,40,30,20,15,10,8,5,3,2,1
 
@@ -443,148 +464,47 @@ table_out=table_in;
 % long: idexed as 1
 % short: indexed as -1
 % 90 deg: indexed as 0 (included in both)
-table_in.longscan=zeros(size(table_out.Elevviewingangle));
-table_in.shortscan=zeros(size(table_out.Elevviewingangle));
-
-if split_scans
+table_in.longscan=zeros(size(table_in.Elevviewingangle));
+table_in.shortscan=zeros(size(table_in.Elevviewingangle));
     
-    % redo zenith rows index
-    ind90=find(table_in.Elevviewingangle==90);
+% redo zenith rows index
+ind90=find(table_in.Elevviewingangle==90);
 
-    % tag each measurement
-    longscan=[];
-    shortscan=[];
+% tag each measurement
+longscan=[];
+shortscan=[];
 
-    for i=1:length(ind90)-1
+for i=1:length(ind90)-1
 
-        % elevs in between 90 deg measurements
-        curr_ind=ind90(i)+1:ind90(i+1)-1;
-        tmp=table_in.Elevviewingangle(curr_ind);
+    % elevs in between 90 deg measurements
+    curr_ind=ind90(i)+1:ind90(i+1)-1;
+    tmp=table_in.Elevviewingangle(curr_ind);
 
-        if any(ismember(tmp,[50,40,20,10,8,5,3])) % elevs that only appear in long scans
-            longscan=[longscan;curr_ind'];
-        else
-            shortscan=[shortscan;curr_ind'];
-        end
+    if any(ismember(tmp,[50,40,20,10,8,5,3])) % elevs that only appear in long scans
+        longscan=[longscan;curr_ind'];
+    else
+        shortscan=[shortscan;curr_ind'];
     end
-    
-    % include 90 deg before/after each scan
-    longscan=union(longscan,longscan+1);
-    longscan=union(longscan,longscan-1);
-    shortscan=union(shortscan,shortscan+1);
-    shortscan=union(shortscan,shortscan-1);
+end
 
-    % save indices in data table
-    table_in.longscan(longscan)=1;
-    table_in.shortscan(shortscan)=1;
+% include 90 deg before/after each scan
+longscan=union(longscan,longscan+1);
+longscan=union(longscan,longscan-1);
+shortscan=union(shortscan,shortscan+1);
+shortscan=union(shortscan,shortscan-1);
+
+% save indices in data table
+table_in.longscan(longscan)=1;
+table_in.shortscan(shortscan)=1;
+
+pan_maxdoas_processed=table_in;
+
+%% save results
+
+if nargin==4
+    if ~strcmp(savedir(end),'/'), savedir=[savedir, '/']; end
+    save([savedir 'pan_' num2str(p_num) '_' uvvis '_' num2str(year) '_maxdoas_processed.mat'],'pan_maxdoas_processed','scan_times')
+end
 
 end
 
-%% write files
-
-if ~exist(savedir,'dir'), mkdir(savedir); end
-
-switch out_type
-    case 'day' % get DOY (fractionalday in table is not necessarily correct...)
-        tmp=day(table_in.DateTime,'dayofyear');
-    case 'week' % get week number (Matlab starts the week on Sunday...)
-        tmp=week(table_in.DateTime);
-    case 'month' % get month number
-        tmp=month(table_in.DateTime);
-end
-     
-% loop over days/weeks/months
-for i=unique(tmp)'
-
-    % select data from given day
-    to_write=table_in(tmp==i,:);
-
-    % discard partial scans before first and after last 90deg dummy
-    % there are a very large number of scans even for each day, no point
-    % trying to save some of the scans that might be almost complete
-    ind=find(to_write.Elevviewingangle==90);
-    % use 90 immediately before/after scans (discard double 90s)
-    if ind(2)-ind(1)==1, ind(1)=[]; end
-    if ind(end)-ind(end-1)==1, ind(end)=[]; end
-
-    to_write=to_write(ind(1):ind(end),:);
-
-    % write files
-    if split_scans
-        
-        %%% long scans
-        to_write_tmp=to_write(to_write.longscan==1,:);
-        
-        yyyy=num2str(year(to_write_tmp.DateDDMMYYYY(1)));
-        mm=num2str(month(to_write_tmp.DateDDMMYYYY(1)));
-        dd=num2str(day(to_write_tmp.DateDDMMYYYY(1)));
-
-        if length(mm)==1, mm=['0' mm]; end
-        if length(dd)==1, dd=['0' dd]; end
-
-        switch out_type
-            case 'day' 
-                fname=[savedir 'DSCD_' yyyy '_' mm '_' dd '_long.dat'];
-            case 'week' 
-                fname=[savedir 'DSCD_' yyyy '_week_' num2str(i) '_long.dat'];
-            case 'month'
-                fname=[savedir 'DSCD_' yyyy '_' mm '_long.dat'];
-        end
-
-        to_write_tmp.longscan=[];
-        to_write_tmp.shortscan=[];
-        writetable(to_write_tmp,fname,'Delimiter',',');
-        
-        %%% short scans
-        to_write_tmp=to_write(to_write.shortscan==1,:);
-        
-        yyyy=num2str(year(to_write_tmp.DateDDMMYYYY(1)));
-        mm=num2str(month(to_write_tmp.DateDDMMYYYY(1)));
-        dd=num2str(day(to_write_tmp.DateDDMMYYYY(1)));
-
-        if length(mm)==1, mm=['0' mm]; end
-        if length(dd)==1, dd=['0' dd]; end
-
-        switch out_type
-            case 'day' 
-                fname=[savedir 'DSCD_' yyyy '_' mm '_' dd '_short.dat'];
-            case 'week' 
-                fname=[savedir 'DSCD_' yyyy '_week_' num2str(i) '_short.dat'];
-            case 'month'
-                fname=[savedir 'DSCD_' yyyy '_' mm '_short.dat'];
-        end
-
-        to_write_tmp.longscan=[];
-        to_write_tmp.shortscan=[];
-        writetable(to_write_tmp,fname,'Delimiter',',');
-        
-    end
-    
-    if split_scans~=1
-        % write all scans in one file
-        
-        yyyy=num2str(year(to_write.DateDDMMYYYY(1)));
-        mm=num2str(month(to_write.DateDDMMYYYY(1)));
-        dd=num2str(day(to_write.DateDDMMYYYY(1)));
-
-        if length(mm)==1, mm=['0' mm]; end
-        if length(dd)==1, dd=['0' dd]; end
-
-        switch out_type
-            case 'day' 
-                fname=[savedir 'DSCD_' yyyy '_' mm '_' dd '.dat'];
-            case 'week' 
-                fname=[savedir 'DSCD_' yyyy '_week_' num2str(i) '.dat'];
-            case 'month'
-                fname=[savedir 'DSCD_' yyyy '_' mm '.dat'];
-        end
-
-        to_write.longscan=[];
-        to_write.shortscan=[];
-        writetable(to_write,fname,'Delimiter',',');
-
-    end
-        
-end
-        
-% % % end

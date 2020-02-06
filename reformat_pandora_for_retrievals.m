@@ -1,5 +1,5 @@
 function [pan_maxdoas_processed,scan_times]=...
-            reformat_pandora_for_retrievals( p_num, uvvis, year, savedir )
+            reformat_pandora_for_retrievals( p_num, uvvis, yr_in, savedir )
 %Insert 90 deg measurements into QDOAS output files for Pandora data
 %
 % Reads Pandora MAX-DOAS table and breaks it up by day/week/month
@@ -32,12 +32,12 @@ function [pan_maxdoas_processed,scan_times]=...
 
 disp('Make sure QDOAS files are read by read_maxdoas_table_pandora.m,')
 disp('there are some important filters/format changes in there')
-
+disp(' ')
 
 %% setup
 % load QDOAS data (has to be reformatted by read_maxdoas_table_pandora.m first)
-filename=['Pandora_' num2str(p_num) '_' uvvis '_' num2str(year) '.mat'];
-filedir='/home/kristof/work/PANDORA/profiling_test/QDOAS_output/';
+filename=['Pandora_' num2str(p_num) '_' uvvis '_' num2str(yr_in) '.mat'];
+filedir='/home/kristof/work/PANDORA/profiling/QDOAS_output/';
 
 try
     load([filedir filename]);
@@ -503,7 +503,7 @@ pan_maxdoas_processed=table_in;
 
 if nargin==4
     if ~strcmp(savedir(end),'/'), savedir=[savedir, '/']; end
-    save([savedir 'pan_' num2str(p_num) '_' uvvis '_' num2str(year) '_maxdoas_processed.mat'],'pan_maxdoas_processed','scan_times')
+    save([savedir 'p' num2str(p_num) '_' uvvis '_' num2str(yr_in) '_maxdoas_processed.mat'],'pan_maxdoas_processed','scan_times')
 end
 
 end

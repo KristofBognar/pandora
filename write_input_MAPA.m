@@ -1,17 +1,26 @@
-function write_input_MAPA( table_in, savedir, out_type, split_scans )
+function write_input_MAPA( p_num, uvvis, yr_in, file_dir, out_type, split_scans )
 % Write Pandora dSCDs to input files used by MAPA
 %
+% This file contains all the data and a priori details MAPA required to run
+%
 %%   
-% INPUT:    table_in: MAX-DOAS data processed by reformat_pandora_for_retrievals.m
-%                     Data is filtered, gaps are dealt with, and 90 deg
-%                     dummies are inserted by that function
-%           savedir: directory where output files will be saved
+% INPUT:    Code loads MAX-DOAS data processed by reformat_pandora_for_retrievals.m
+%           Data is filtered, gaps are dealt with, and 90 deg dummies are
+%           inserted by that function.
+%           p_num: Pandora instrument number. Add location details as
+%                  new instruments are included
+%           uvvis: 'uv or 'vis', according to wavelength range used for
+%                  processing (used for output file name only)
+%           yr_in: year of data to process
+%           file_dir: directory where processed data is found
 %           out_type: 'day', 'week', or 'month' for daily, weekly or monthly files
-%           split_scans: 0 to write all scans into one file
-%                        1 to separate short and long scans into different files
-%                        2 to do 1 and 2 at the same time
+%           split_scans: 0: write all scans into one file
+%                        1: separate short and long scans into different files
+%                           !!only complete scans are saved in the separated files!!
+%                        2: do 1 and 2 at the same time
 %
 % OUTPUT:   daily/weekly/monthly dSCD files in MAPA's netCDF format
+%           Data is saved in a new folder in file_dir
 %
 %
 % Kristof Bognar, January 2020
@@ -19,12 +28,54 @@ function write_input_MAPA( table_in, savedir, out_type, split_scans )
 % sample input file
 % '/home/kristof/work/MAPA/Release_0.991/sample_files/input/sample/sample_input_file_v0991.nc'
 
-%% reorganize input data
+if nargin==5
+    split_scans=0;
+elseif nargin<5
+    error('Not enough input arguments')
+end
 
-%%% debug
-% load('pan_103_vis_2018_maxdoas_processed.mat')
-% table_in=pan_maxdoas_processed;
-%%%
+%% load data
+% files saved by reformat_pandora_for_retrievals.m
+
+if ~strcmp(file_dir(end),'/'), file_dir=[file_dir, '/']; end
+
+fname=[file_dir 'p' num2str(p_num) '_' uvvis '_' num2str(yr_in) '_maxdoas_processed.mat'];
+
+try
+    load(fname);
+catch
+    error('Check data folder, or save data using reformat_pandora_for_retrievals.m')
+end
+
+table_in=pan_maxdoas_processed;
+
+%% location info
+% Pandora instrument locations, determined from instument number
+% latitude is degrees, positive to north
+% longitude is degrees, positive to east
+% altitude of the instrument above ground = alt_instr - alt_station (all in meters)
+
+if any(p_num==[103,104])
+ 
+    % ECCC Downsview
+    location.lat=43.7810; 
+    location.lon=-79.4680;
+    location.alt_station=187; 
+    location.alt_instr=location.alt_station+15;
+        
+elseif p_num==109
+    
+%     % TAO, UofT St George
+%     location.lat=??
+%     location.lon=??
+%     location.alt_station=??
+% %     location.alt_instr=location.alt_station+15;
+
+else
+    error(['Add location details for Pandora ' num2str(instr_num)]);
+end
+
+%% reorganize input data
 
 % calculate relative azimuth angle
 table_in.RAA=table_in.SolarAzimuthAngle-(table_in.Azimviewingangle-180);
@@ -36,6 +87,16 @@ columns_new = {'DateTime','Elevviewingangle','Azimviewingangle',...
                'NO2_VisSlColno2','NO2_VisSlErrno2','NO2_VisSlColo4','NO2_VisSlErro4'};
 [~,tmp] = ismember(columns_new,columns_orig);
 table_in = table_in(:,tmp);
+
+% add another time column for later processing (original datetime column
+% will be reformatted, array must be all numbers for this function)
+table_in.datenum=datenum(table_in.DateTime);
+
+% account for added column in header info
+columns_new=[columns_new, 'datenum'];
+
+% some indices for later
+elevs_page=find_in_cell(columns_new,'Elevviewingangle');
 
 
 %% elevation angles -- some of the code is hard coded for:
@@ -230,7 +291,8 @@ for i=unique(time_steps)'
                       to_write(seq_curr(end)+1:end,:)];
 
         else
-            error('No scans should be here...')
+            error('Congrats, you''ve managed what was once thought impossible')
+            % should not have any scans here
         end
               
         % account for the number of extra rows added
@@ -269,18 +331,122 @@ for i=unique(time_steps)'
     % transpose each page in 3D array to get required scans by elevs array
     to_write=permute(to_write,[2 1 3]);
     
+    
+    %%% remove any empty profiles (e.g. if only up scan was completed; code
+    %%% inserts empty down scan in front)
+    
+    % indices of all NaN scans
+    bad_scans=sum(isnan(to_write(:,:,elevs_page)),2)==length(elevs_saved);
 
+    % remove bad scans from all variables
+    to_write(bad_scans,:,:)=[];
+    
+    % separate long and short scans
+    if split_scans>0
+        
+        % row templates to match against isnan(to_write) -- set to true
+        % where NaN is expected for give scan
+        long_tmp=false(size(elevs_saved)); % no NaNs
+        
+        short_tmp=long_tmp;
+        short_tmp([3:6,8,10,11])=~short_tmp([3:6,8,10,11]); % NaNs at missing elevs
+        
+        % find rows that match templates 
+        %%% only complete scans are saved in the separated files!!
+        long_to_save=ismember(isnan(to_write(:,:,elevs_page)),long_tmp,'rows');
+        short_to_save=ismember(isnan(to_write(:,:,elevs_page)),short_tmp,'rows');
+        
+    end
+    
+    
+    %% get NCEP profiles of pressure, temperature
+    % should have one profile per elevation sequence
+    
+    % calculate mean time for each sequence: use datenum field, convert
+    % back to datetime
+    tmp=find_in_cell(columns_new,'datenum');
+    scan_mean_time=to_write(:,:,tmp);
+    scan_mean_time=datetime(nanmean(scan_mean_time,2),'convertfrom','datenum');
+    
+    % retrieve NCEP profiles (daily, all profiles for given day will have
+    % identical P, T profiles)
+    [ P_NCEP, T_NCEP, alt_grid_NCEP ] = get_NCEP_PT(scan_mean_time);
+
+    % convert alt grid to km (P is lready in hPa and T is in K)
+    alt_grid_NCEP=alt_grid_NCEP/1000;
+    
+    
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
     %% Write data to file
     
-    n_pt=339;
+    % create output folder
+    % data is saved separately for each instument and wavelength range
+    savedir=[file_dir 'MAPA_input_p' num2str(p_num) '_' uvvis '/'];
+    
+    % create folder if necessary
+    if ~exist(savedir,'dir'), mkdir(savedir), end
+    
+    if split_scans==0 || split_scans==2 % write files with all scans included
+        
+        % output file name
+        f_out=[savedir 'p' num2str(p_num) '_' uvvis '_' num2str(yr_in)...
+               '_' out_type num2str(i) '.nc'];
 
-    f_out=['test_w' num2str(i) '.nc'];
-    if exist(f_out,'file'), delete(f_out); end
+        % overwrite old files
+        if exist(f_out,'file'), delete(f_out); end
 
+        % write data
+        write_nc(f_out,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,alt_grid_NCEP)
+        
+    end
+    
+    if split_scans>0 % write files with short and long scans separated
+        
+        %%% long scans
+        if sum(long_to_save)>0
+            
+            % output file name
+            f_out=[savedir 'long_p' num2str(p_num) '_' uvvis '_' num2str(yr_in)...
+                   '_' out_type num2str(i) '.nc'];
+
+            % overwrite old files
+            if exist(f_out,'file'), delete(f_out); end
+
+            % write data
+            write_nc(f_out,to_write(long_to_save,:,:),elevs_saved,location,columns_new,...
+                     P_NCEP(long_to_save,:),T_NCEP(long_to_save,:),alt_grid_NCEP)
+        end
+        
+        %%% short scans
+        if sum(short_to_save)>0
+        
+            % output file name
+            f_out=[savedir 'short_p' num2str(p_num) '_' uvvis '_' num2str(yr_in)...
+                   '_' out_type num2str(i) '.nc'];
+
+            % overwrite old files
+            if exist(f_out,'file'), delete(f_out); end
+
+            % remove unnecessary elevations (short scans only)
+            to_write(:,short_tmp,:)=[];
+            
+            % write data
+            write_nc(f_out,to_write(short_to_save,:,:),elevs_saved(~short_tmp),location,...
+                     columns_new, P_NCEP(short_to_save,:),T_NCEP(short_to_save,:),alt_grid_NCEP)
+        end
+             
+    end
+        
+        
+end
+
+end
+
+% function to create and fill netCDF file
+function write_nc(f_out,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,alt_grid_NCEP)
     %% create file
     ncid = netcdf.create(f_out,'netcdf4');
-
+    
     % gobal attributes
     varid = netcdf.getConstant('GLOBAL');
     netcdf.putAtt(ncid,varid,'data_name','Pandora');
@@ -288,6 +454,12 @@ for i=unique(time_steps)'
     netcdf.putAtt(ncid,varid,'data_contact','xiaoyi.zhao@canada.ca, kbognar@physics.utoronto.ca');
     netcdf.putAtt(ncid,varid,'data_institute','Environment and Climate Change Canada');
 
+    % get dimensions
+    n_seq=size(to_write,1);
+    n_elevs=length(elevs_saved);
+    n_pt=length(alt_grid_NCEP);
+    
+    
     % set dimensions
     dim_seq = netcdf.defDim(ncid,'dim_sequences',n_seq);
     dim_elevs = netcdf.defDim(ncid,'dim_elevations',n_elevs);
@@ -339,7 +511,7 @@ for i=unique(time_steps)'
     % a priori temperature, pressure profiles
     grp_pt = netcdf.defGrp(ncid,'atmosphere');
 
-    var_h = netcdf.defVar(grp_pt,'height','NC_DOUBLE',[dim_seq,dim_pt]);
+    var_h = netcdf.defVar(grp_pt,'height','NC_DOUBLE',dim_pt);
     set_attr(grp_pt,var_h,NaN,'Height','km')
 
     var_t = netcdf.defVar(grp_pt,'temperature','NC_DOUBLE',[dim_seq,dim_pt]);
@@ -364,6 +536,8 @@ for i=unique(time_steps)'
     instr_alt = netcdf.defVar(grp_loc,'altitude_of_instrument','NC_DOUBLE',dim_scalar);
     set_attr(grp_loc,instr_alt,NaN,'Altitude of the instrument above sea level','m')
 
+    
+    
     %% write variables
     netcdf.endDef(ncid); %enter data mode
 
@@ -400,23 +574,30 @@ for i=unique(time_steps)'
     % elevation angle
     netcdf.putVar(grp_meas,var_elev,elevs_saved);
 
+    
+    %%% a priori temperature, pressure profiles
+    % altitude grid
+    netcdf.putVar(grp_pt,var_h,alt_grid_NCEP);
+    
+    % temperature profile
+    netcdf.putVar(grp_pt,var_t,T_NCEP);
+
+    % pressure profile
+    netcdf.putVar(grp_pt,var_p,P_NCEP);
+    
     %%% instrument location
     % station altitude
-    netcdf.putVar(grp_loc,station_alt,NaN);
+    netcdf.putVar(grp_loc,station_alt,location.alt_station);
     % instrument altitude
-    netcdf.putVar(grp_loc,instr_alt,NaN);
+    netcdf.putVar(grp_loc,instr_alt,location.alt_instr);
     % station latitude
-    netcdf.putVar(grp_loc,instr_lat,NaN);
+    netcdf.putVar(grp_loc,instr_lat,location.lat);
     % station longitude
-    netcdf.putVar(grp_loc,instr_lon,NaN);
+    netcdf.putVar(grp_loc,instr_lon,location.lon);
     
 
-
-
-    
     netcdf.close(ncid);
-end
-
+    
 end
 
 function set_attr(ncid,varid,fillval,longname,units)

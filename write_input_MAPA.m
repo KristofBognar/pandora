@@ -471,10 +471,10 @@ function write_nc(f_out,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,
     tmp = netcdf.defGrp(ncid,'aerosol');
     grp_aer=netcdf.defGrp(tmp,'o4_425to490nm');
 
-    var_o4 = netcdf.defVar(grp_aer,'value','NC_DOUBLE',[dim_seq,dim_elevs]);
+    var_o4 = netcdf.defVar(grp_aer,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
     set_attr(grp_aer,var_o4,NaN,'o4_slant_column','molec**2/cm**5')
 
-    var_o4err = netcdf.defVar(grp_aer,'error','NC_DOUBLE',[dim_seq,dim_elevs]);
+    var_o4err = netcdf.defVar(grp_aer,'error','NC_DOUBLE',[dim_elevs,dim_seq]);
     set_attr(grp_aer,var_o4err,NaN,'o4_slant_column_error','molec**2/cm**5')
 
 
@@ -482,10 +482,10 @@ function write_nc(f_out,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,
     tmp = netcdf.defGrp(ncid,'tracegas');
     grp_tg=netcdf.defGrp(tmp,'no2_425to490nm');
 
-    var_no2 = netcdf.defVar(grp_tg,'value','NC_DOUBLE',[dim_seq,dim_elevs]);
+    var_no2 = netcdf.defVar(grp_tg,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
     set_attr(grp_tg,var_no2,NaN,'no2_slant_column','molec/cm**2')
 
-    var_no2err = netcdf.defVar(grp_tg,'error','NC_DOUBLE',[dim_seq,dim_elevs]);
+    var_no2err = netcdf.defVar(grp_tg,'error','NC_DOUBLE',[dim_elevs,dim_seq]);
     set_attr(grp_tg,var_no2err,NaN,'no2_slant_column_error','molec/cm**2')
 
 
@@ -495,13 +495,13 @@ function write_nc(f_out,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,
     var_ind = netcdf.defVar(grp_meas,'scan_idx','NC_INT',dim_seq);
     set_attr(grp_meas,var_ind,-1,'index','')
 
-    var_raa = netcdf.defVar(grp_meas,'raa','NC_DOUBLE',[dim_seq,dim_elevs]);
+    var_raa = netcdf.defVar(grp_meas,'raa','NC_DOUBLE',[dim_elevs,dim_seq]);
     set_attr(grp_meas,var_raa,NaN,'relative_azimuth_angle','degree')
 
-    var_time = netcdf.defVar(grp_meas,'time','NC_INT64',[dim_seq,dim_elevs]);
+    var_time = netcdf.defVar(grp_meas,'time','NC_INT64',[dim_elevs,dim_seq]);
     set_attr(grp_meas,var_time,-1,'measurement_time_(UTC)','yyyymmddHHMMSSZ')
 
-    var_sza = netcdf.defVar(grp_meas,'sza','NC_DOUBLE',[dim_seq,dim_elevs]);
+    var_sza = netcdf.defVar(grp_meas,'sza','NC_DOUBLE',[dim_elevs,dim_seq]);
     set_attr(grp_meas,var_sza,NaN,'solar_zenith_angle','degree')
 
     var_elev = netcdf.defVar(grp_meas,'elevation_angle','NC_DOUBLE',dim_elevs);
@@ -511,30 +511,35 @@ function write_nc(f_out,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,
     % a priori temperature, pressure profiles
     grp_pt = netcdf.defGrp(ncid,'atmosphere');
 
-    var_h = netcdf.defVar(grp_pt,'height','NC_DOUBLE',dim_pt);
+    var_h = netcdf.defVar(grp_pt,'height','NC_DOUBLE',[dim_pt,dim_seq]);
     set_attr(grp_pt,var_h,NaN,'Height','km')
 
-    var_t = netcdf.defVar(grp_pt,'temperature','NC_DOUBLE',[dim_seq,dim_pt]);
+    var_t = netcdf.defVar(grp_pt,'temperature','NC_DOUBLE',[dim_pt,dim_seq]);
     set_attr(grp_pt,var_t,NaN,'Temperature','K')
 
-    var_p = netcdf.defVar(grp_pt,'pressure','NC_DOUBLE',[dim_seq,dim_pt]);
+    var_p = netcdf.defVar(grp_pt,'pressure','NC_DOUBLE',[dim_pt,dim_seq]);
     set_attr(grp_pt,var_p,NaN,'Pressure','hPa')
-
 
     % instrument location
     grp_loc = netcdf.defGrp(ncid,'instrument_location');
 
-    station_alt = netcdf.defVar(grp_loc,'altitude_of_station','NC_DOUBLE',dim_scalar);
+    station_alt = netcdf.defVar(grp_loc,'altitude_of_station','NC_DOUBLE',dim_seq);
     set_attr(grp_loc,station_alt,NaN,'Altitude of the station above sea level','m')
 
-    instr_lon = netcdf.defVar(grp_loc,'longitude','NC_DOUBLE',dim_scalar);
+    instr_lon = netcdf.defVar(grp_loc,'longitude','NC_DOUBLE',dim_seq);
     set_attr(grp_loc,instr_lon,NaN,'Longitude of the instrument (positive East)','degree_east')
 
-    instr_lat = netcdf.defVar(grp_loc,'latitude','NC_DOUBLE',dim_scalar);
+    instr_lat = netcdf.defVar(grp_loc,'latitude','NC_DOUBLE',dim_seq);
     set_attr(grp_loc,instr_lat,NaN,'Latitude of the instrument (positive North)','degree_north')
 
-    instr_alt = netcdf.defVar(grp_loc,'altitude_of_instrument','NC_DOUBLE',dim_scalar);
+    instr_alt = netcdf.defVar(grp_loc,'altitude_of_instrument','NC_DOUBLE',dim_seq);
     set_attr(grp_loc,instr_alt,NaN,'Altitude of the instrument above sea level','m')
+
+    % auxiliary data (NOT PROVIDED, but has to be in the file)
+    grp_aux = netcdf.defGrp(ncid,'auxiliary');
+
+%     var_o4vcd = netcdf.defVar(grp_aux,'o4vcd','NC_DOUBLE',dim_seq);
+%     set_attr(grp_aux,var_o4vcd,NaN,'O4 vertical column density','molec**2/cm**5')
 
     
     
@@ -543,17 +548,17 @@ function write_nc(f_out,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,
 
     %%% aerosols
     tmp=find_in_cell(columns_new,'NO2_VisSlColo4');
-    netcdf.putVar(grp_aer,var_o4,to_write(:,:,tmp));
+    netcdf.putVar(grp_aer,var_o4,to_write(:,:,tmp)');
 
     tmp=find_in_cell(columns_new,'NO2_VisSlErro4');
-    netcdf.putVar(grp_aer,var_o4err,to_write(:,:,tmp));
+    netcdf.putVar(grp_aer,var_o4err,to_write(:,:,tmp)');
     
     %%% tracegas
     tmp=find_in_cell(columns_new,'NO2_VisSlColno2');
-    netcdf.putVar(grp_tg,var_no2,to_write(:,:,tmp));
+    netcdf.putVar(grp_tg,var_no2,to_write(:,:,tmp)');
     
     tmp=find_in_cell(columns_new,'NO2_VisSlErrno2');
-    netcdf.putVar(grp_tg,var_no2err,to_write(:,:,tmp));
+    netcdf.putVar(grp_tg,var_no2err,to_write(:,:,tmp)');
     
     %%% measurement info
     % scan number
@@ -561,15 +566,15 @@ function write_nc(f_out,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,
 
     % relative azimuth angle
     tmp=find_in_cell(columns_new,'RAA');
-    netcdf.putVar(grp_meas,var_raa,to_write(:,:,tmp));
+    netcdf.putVar(grp_meas,var_raa,to_write(:,:,tmp)');
 
-    % time (format??)
+    % time 
     tmp=find_in_cell(columns_new,'DateTime');
-    netcdf.putVar(grp_meas,var_time,int64(to_write(:,:,tmp)));
+    netcdf.putVar(grp_meas,var_time,int64(to_write(:,:,tmp)'));
 
     % solar zenigh angle
     tmp=find_in_cell(columns_new,'SZA');
-    netcdf.putVar(grp_meas,var_sza,to_write(:,:,tmp));
+    netcdf.putVar(grp_meas,var_sza,to_write(:,:,tmp)');
 
     % elevation angle
     netcdf.putVar(grp_meas,var_elev,elevs_saved);
@@ -577,25 +582,27 @@ function write_nc(f_out,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,
     
     %%% a priori temperature, pressure profiles
     % altitude grid
-    netcdf.putVar(grp_pt,var_h,alt_grid_NCEP);
+    netcdf.putVar(grp_pt,var_h,repmat(alt_grid_NCEP,n_seq,1)');
     
     % temperature profile
-    netcdf.putVar(grp_pt,var_t,T_NCEP);
+    netcdf.putVar(grp_pt,var_t,T_NCEP');
 
     % pressure profile
-    netcdf.putVar(grp_pt,var_p,P_NCEP);
+    netcdf.putVar(grp_pt,var_p,P_NCEP');
     
     %%% instrument location
     % station altitude
-    netcdf.putVar(grp_loc,station_alt,location.alt_station);
+    netcdf.putVar(grp_loc,station_alt,ones(n_seq,1)*location.alt_station);
     % instrument altitude
-    netcdf.putVar(grp_loc,instr_alt,location.alt_instr);
+    netcdf.putVar(grp_loc,instr_alt,ones(n_seq,1)*location.alt_instr);
     % station latitude
-    netcdf.putVar(grp_loc,instr_lat,location.lat);
+    netcdf.putVar(grp_loc,instr_lat,ones(n_seq,1)*location.lat);
     % station longitude
-    netcdf.putVar(grp_loc,instr_lon,location.lon);
+    netcdf.putVar(grp_loc,instr_lon,ones(n_seq,1)*location.lon);
     
-
+    % fill o4 VCD with NaNs
+%     netcdf.putVar(grp_aux,var_o4vcd,nan(n_seq,1));
+    
     netcdf.close(ncid);
     
 end

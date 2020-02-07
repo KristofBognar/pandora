@@ -9,8 +9,9 @@ function write_input_MAPA( p_num, uvvis, yr_in, file_dir, out_type, split_scans 
 %           inserted by that function.
 %           p_num: Pandora instrument number. Add location details as
 %                  new instruments are included
-%           uvvis: 'uv or 'vis', according to wavelength range used for
-%                  processing (used for output file name only)
+%           uvvis: 'uv or 'vis': wavelength range used for processing
+%                  'uvvis': save both Uv and visible results in one file --
+%                           MAPA can do the retrieval in one go
 %           yr_in: year of data to process
 %           file_dir: directory where processed data is found
 %           out_type: 'day', 'week', or 'month' for daily, weekly or monthly files
@@ -431,7 +432,7 @@ for i=unique(time_steps)'
             to_write(:,short_tmp,:)=[];
             
             % write data
-            write_nc(f_out,to_write(short_to_save,:,:),elevs_saved(~short_tmp),location,...
+            write_nc(f_out,uvvis,to_write(short_to_save,:,:),elevs_saved(~short_tmp),location,...
                      columns_new, P_NCEP(short_to_save,:),T_NCEP(short_to_save,:),alt_grid_NCEP)
         end
              
@@ -443,7 +444,8 @@ end
 end
 
 % function to create and fill netCDF file
-function write_nc(f_out,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,alt_grid_NCEP)
+function write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,...
+                  P_NCEP,T_NCEP,alt_grid_NCEP)
     %% create file
     ncid = netcdf.create(f_out,'netcdf4');
     
@@ -467,9 +469,18 @@ function write_nc(f_out,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,
     dim_scalar = netcdf.defDim(ncid,'dim_scalar',1);
 
     %% data groups and variables
+    
+    % set fit window wavelength ranges
+    % assuming CINI-2 fir windows
+    if strcmp(uvvis,'vis')
+        lambda_range='425to490nm';
+    elseif strcmp(uvvis,'uv')
+        lambda_range='338to370nm';
+    end
+    
     % aerosols
     tmp = netcdf.defGrp(ncid,'aerosol');
-    grp_aer=netcdf.defGrp(tmp,'o4_425to490nm');
+    grp_aer=netcdf.defGrp(tmp,['o4_' lambda_range ]);
 
     var_o4 = netcdf.defVar(grp_aer,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
     set_attr(grp_aer,var_o4,NaN,'o4_slant_column','molec**2/cm**5')
@@ -480,7 +491,7 @@ function write_nc(f_out,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,
 
     % tracegas
     tmp = netcdf.defGrp(ncid,'tracegas');
-    grp_tg=netcdf.defGrp(tmp,'no2_425to490nm');
+    grp_tg=netcdf.defGrp(tmp,['no2_' lambda_range ]);
 
     var_no2 = netcdf.defVar(grp_tg,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
     set_attr(grp_tg,var_no2,NaN,'no2_slant_column','molec/cm**2')

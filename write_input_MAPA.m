@@ -78,8 +78,9 @@ end
 
 %% reorganize input data
 
-% calculate relative azimuth angle
-table_in.RAA=table_in.SolarAzimuthAngle-(table_in.Azimviewingangle-180);
+% calculate relative azimuth angle (need magnitude only)
+%%% viewing angle is 0-360 (0=N, 90=E), SAA is +-180 (0=S, 90=E)
+table_in.RAA=abs(table_in.SolarAzimuthAngle-(table_in.Azimviewingangle-180));
 
 % keep relevant columns only
 columns_orig = table_in.Properties.VariableNames;

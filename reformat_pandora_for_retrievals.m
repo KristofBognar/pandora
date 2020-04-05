@@ -30,8 +30,7 @@ function [pan_maxdoas_processed,scan_times]=...
 %
 % Kristof Bognar, August 2019
 
-disp('Make sure QDOAS files are read by read_maxdoas_table_pandora.m,')
-disp('there are some important filters/format changes in there')
+disp('Make sure QDOAS files are read by merge_pandora_dscds.m,')
 disp(' ')
 
 %% setup
@@ -44,7 +43,7 @@ try
     table_in=data;
     clearvars data
 catch
-    error('Read QDOAS files using read_maxdoas_table_pandora.m')
+    error('Read QDOAS files using merge_pandora_dscds,m')
 end
 
 % find first retrieval column (measurement info columns come first; assume
@@ -87,10 +86,44 @@ end
 % from the next scan (should be OK for HEIPRO, doesn't matter for MAPA)
 gap_tolerance=30/(24*60); % 30 minutes, converted to days
 disp(['Using ' num2str(gap_tolerance*(24*60)) ' min as cutoff for data gaps'])
+disp(' ')
 
 % round angles to nearest integer (done by read_maxdoas_table_pandora.m)
 % table_in.Elevviewingangle=round(table_in.Elevviewingangle);
 % table_in(table_in.NO2_VisSlColno2>1e20,:)=[];
+
+%% remove scans with uncommon elevation angles
+
+az_list=unique(table_in.Azimviewingangle);
+az_count=histc(table_in.Azimviewingangle,unique(table_in.Azimviewingangle));
+
+if length(az_list)>1
+    
+    disp('Multiple azimuth angles present (angle + n.o. repetitions):') 
+    disp([az_list, az_count])
+
+    disp('Enter cutoff for number of measurements with given az angle')
+    disp('Angles that repeat fewer times than given are deleted (default:25)')
+    
+    tmp=input('','s');
+
+    if ~isempty(tmp)
+        az_cutoff=str2double(tmp);
+    else
+        az_cutoff=25;
+    end
+
+    for i=1:length(az_list)
+        if az_count(i)<az_cutoff, table_in(table_in.Azimviewingangle==az_list(i),:)=[]; end
+    end
+
+    % check results
+    az_list=unique(table_in.Azimviewingangle);
+    az_count=histc(table_in.Azimviewingangle,unique(table_in.Azimviewingangle));
+    disp('Remaining azimuth angles:') 
+    disp([az_list, az_count])
+
+end
 
 
 %% format date/time fields properly

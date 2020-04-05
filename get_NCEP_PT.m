@@ -78,30 +78,59 @@ if ~isequal(days_ncep,days_T), error(['NCEP files incomplete for ' num2str(yr)])
 
 %% interpolate data
 
-% loop over days in the file (1 line per day)
-for i=1:length(days_ncep)
-    
-    % if current date is needed, find P and T
-    if ismember(days_ncep(i),days_in)
+% loop over days in the input
+for i=1:length(days_in)
+
+    % current chunk of data
+    ind=(dates_in==days_in(i));
+
+    % Check if current date is in NCEP file (NCEP files have 1 line per day)
+    if ismember(days_in(i),days_ncep)
        
         % find which dates correspond to current day 
-        ind=(dates_in==days_ncep(i));
+        ind_ncep=find(days_ncep==days_in(i));
         
 %         % get pressure using barometric law
 %         not great, deviates from model P -- use linear interpolation instead
-%         tmp_fit=fit(alt_data(i,:)',p_grid','exp1'); % pressure at any altitude level
+%         tmp_fit=fit(alt_data(ind_ncep,:)',p_grid','exp1'); % pressure at any altitude level
 %         tmp_P=tmp_fit(alt_grid)'; % pressure on selected altitude grid
         
         % get pressure
-        tmp_P=interp1(alt_data(i,:),p_grid,alt_grid,'linear','extrap');
+        tmp_P=interp1(alt_data(ind_ncep,:),p_grid,alt_grid,'linear','extrap');
         P_out(ind,:)=repmat(tmp_P,sum(ind),1);
         
         % get temperature
-        tmp_T=interp1(alt_data(i,:),T_data(i,:),alt_grid,'linear','extrap');
+        tmp_T=interp1(alt_data(ind_ncep,:),T_data(ind_ncep,:),alt_grid,'linear','extrap');
         T_out(ind,:)=repmat(tmp_T,sum(ind),1);
         
     else
-        continue
+        
+        % given day is missing from NCEP file for some reason
+        % take average of day before and after
+        
+        day_before=str2num(datestr(datetime(num2str(days_in(i)), 'InputFormat', 'yyyyMMdd')...
+                                           -days(1),'yyyymmdd'));
+        day_after=str2num(datestr(datetime(num2str(days_in(i)), 'InputFormat', 'yyyyMMdd')...
+                                          +days(1),'yyyymmdd'));
+
+        day_before_ind=find(days_ncep==day_before);
+        day_after_ind=find(days_ncep==day_after);
+        
+        if isempty(day_before_ind) || isempty(day_after_ind)
+            error('Consecutive days missing from NCEP file, fix this')
+        end
+        
+        % get pressure
+        tmp=(alt_data(day_before_ind,:)+alt_data(day_after_ind,:))/2;
+        tmp_P=interp1(tmp,p_grid,alt_grid,'linear','extrap');
+        P_out(ind,:)=repmat(tmp_P,sum(ind),1);
+        
+        % get temperature
+        tmp2=(T_data(day_before_ind,:)+T_data(day_after_ind,:))/2;
+        tmp_T=interp1(tmp,tmp2,alt_grid,'linear','extrap');
+        T_out(ind,:)=repmat(tmp_T,sum(ind),1);
+        
+        
     end
     
 end

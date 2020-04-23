@@ -106,30 +106,13 @@ for i=1:length(days_in)
     else
         
         % given day is missing from NCEP file for some reason
-        % take average of day before and after
+        error([ num2str(days_in(i)) ' is missing from NCEP file, update the file'])
         
-        day_before=str2num(datestr(datetime(num2str(days_in(i)), 'InputFormat', 'yyyyMMdd')...
-                                           -days(1),'yyyymmdd'));
-        day_after=str2num(datestr(datetime(num2str(days_in(i)), 'InputFormat', 'yyyyMMdd')...
-                                          +days(1),'yyyymmdd'));
-
-        day_before_ind=find(days_ncep==day_before);
-        day_after_ind=find(days_ncep==day_after);
-        
-        if isempty(day_before_ind) || isempty(day_after_ind)
-            error('Consecutive days missing from NCEP file, fix this')
-        end
-        
-        % get pressure
-        tmp=(alt_data(day_before_ind,:)+alt_data(day_after_ind,:))/2;
-        tmp_P=interp1(tmp,p_grid,alt_grid,'linear','extrap');
-        P_out(ind,:)=repmat(tmp_P,sum(ind),1);
-        
-        % get temperature
-        tmp2=(T_data(day_before_ind,:)+T_data(day_after_ind,:))/2;
-        tmp_T=interp1(tmp,tmp2,alt_grid,'linear','extrap');
-        T_out(ind,:)=repmat(tmp_T,sum(ind),1);
-        
+        % to update: download data from
+        % ftp.cpc.ncep.noaa.gov/ndacc/ncep/<tempORheight>/<year>/ to
+        % /net/aurora/reanalysis/ncep/<tempORheight>/<year>/, and run
+        % "python NCEPnmcFormat.py -i NCEPinputFile_tor.py" on berg (code
+        % in /home/kbognar on berg -- must use a python 2 environment to run)
         
     end
     

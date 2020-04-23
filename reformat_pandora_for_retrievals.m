@@ -36,7 +36,10 @@ disp(' ')
 %% setup
 % load QDOAS data (has to be reformatted by read_maxdoas_table_pandora.m first)
 filename=['Pandora_' num2str(p_num) '_' uvvis '_' num2str(yr_in) '.mat'];
-filedir='/home/kristof/work/PANDORA/profiling/QDOAS_output/';
+filedir='/home/kristof/work/PANDORA/profiling/QDOAS_output/spec_v4';
+
+disp(' ')
+disp('Using QDOAS_output/spec_v4 as default source')
 
 try
     load([filedir filename]);
@@ -81,10 +84,12 @@ end
 % gap tolerance
 % max accepted time difference between consecutive measurements -- if time
 % is greater, it's considered a gap
+%
 % there are frequent 5-15 min gaps when direct sun measurements are made,
-% 90deg dummies are inserted in the middle of these short gaps, slightliy far
-% from the next scan (should be OK for HEIPRO, doesn't matter for MAPA)
-gap_tolerance=30/(24*60); % 30 minutes, converted to days
+% 90deg dummies are inserted in the middle of some of these short gaps,
+% slightliy far from the next scan (should be OK for HEIPRO, doesn't matter
+% for MAPA)
+gap_tolerance=10/(24*60); % 10 minutes, converted to days
 disp(['Using ' num2str(gap_tolerance*(24*60)) ' min as cutoff for data gaps'])
 disp(' ')
 
@@ -396,9 +401,14 @@ scan_times(remove)=[];
 ind(remove)=[];
 
 %% deal with exceptions
-% any gap left that's longer than the gap tolerance is a scan with no zenith measurements
+
+% any gap left that's longer than 20 min is probably a scan with no zenith
+% measurements (based on 2018 data from 103 -- using 10min gaps for 90 deg
+% dummies, 90 t0 90 duration is 17 min)
+
 % some 'zenith' measurements have elev angles of <80, not used as reference in QDOAS
-tmp=find(scan_times>minutes(gap_tolerance*(24*60))); % convert gap_tolerance to min from days
+
+tmp=find(scan_times>minutes(20));
 
 if ~isempty(tmp)
     disp('')
@@ -410,7 +420,6 @@ if ~isempty(tmp)
     end
     
     % check for off-angle zenith measurements
-    
     elevs=unique(table_in.Elevviewingangle)';
     bad_elevs=setdiff(elevs,elevs_expected);
     
@@ -458,20 +467,7 @@ if ~isempty(tmp)
             disp(find(table_in.Elevviewingangle==bad_elevs(i)))
         end
     end
-    
-    % get scan lengths again
-
-    % all inserted 90deg dummies
-    ind=find(table_in.Elevviewingangle==90);
-
-    % time diffs between 90 deg lines
-    scan_times=table_in.Timehhmmss(ind(2:end))-table_in.Timehhmmss(ind(1:end-1));
-
-    % remove gaps (consecutive 90 deg lines, no scans in between)
-    remove=find(ind(2:end)-ind(1:end-1)==1);
-    scan_times(remove)=[];
-    ind(remove)=[];
-    
+        
 else % no scans >gap tolerance, check for bad elevs anyway
     
     elevs=unique(table_in.Elevviewingangle)';
@@ -536,7 +532,7 @@ pan_maxdoas_processed=table_in;
 
 if nargin==4
     if ~strcmp(savedir(end),'/'), savedir=[savedir, '/']; end
-    save([savedir 'p' num2str(p_num) '_' uvvis '_' num2str(yr_in) '_maxdoas_processed.mat'],'pan_maxdoas_processed','scan_times')
+    save([savedir 'p' num2str(p_num) '_' uvvis '_' num2str(yr_in) '_maxdoas_processed.mat'],'pan_maxdoas_processed')
 end
 
 end

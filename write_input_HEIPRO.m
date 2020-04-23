@@ -25,6 +25,8 @@ function write_input_HEIPRO( p_num, uvvis, yr_in, file_dir, out_type, split_scan
 %% load data
 % files saved by reformat_pandora_for_retrievals.m
 
+error('match mapa input file naming')
+
 if ~strcmp(file_dir(end),'/'), file_dir=[file_dir, '/']; end
 
 fname=[file_dir 'p' num2str(p_num) '_' uvvis '_' num2str(yr_in) '_maxdoas_processed.mat'];

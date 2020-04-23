@@ -7,10 +7,10 @@ if nargin==2, lambda='vis'; end
 
 %% find files
 
-cd('/home/kristof/work/PANDORA/profiling_test/QDOAS_output')
+cd('/home/kristof/work/PANDORA/profiling/QDOAS_output')
 
 % make list of all files
-tmp = dir(['Pandora_' num2str(p_num) '_' lambda '_' num2str(year) '_*']); 
+tmp = dir(['new_Pandora_' num2str(p_num) '_' lambda '_' num2str(year) '_*']); 
 f_list = {tmp.name}; % cell array of file names
 
 % remove backup files

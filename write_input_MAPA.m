@@ -29,18 +29,56 @@ function write_input_MAPA( p_num, uvvis, yr_in, file_dir, out_type, split_scans 
 % sample input file
 % '/home/kristof/work/MAPA/Release_0.991/sample_files/input/sample/sample_input_file_v0991.nc'
 
+%% setup
+% default inputs
 if nargin==5
     split_scans=0;
 elseif nargin<5
     error('Not enough input arguments')
 end
 
-%% load data
-% files saved by reformat_pandora_for_retrievals.m
+% a priori selection
+ap_model='ERA5';
+ap_surfPT=0;
 
+if ap_surfPT==0
+    ap_surfPT_str='_no_surfPT';
+else
+    ap_surfPT_str='';
+end 
+
+%% set input/output folder naming
 if ~strcmp(file_dir(end),'/'), file_dir=[file_dir, '/']; end
 
-fname=[file_dir 'p' num2str(p_num) '_' uvvis '_' num2str(yr_in) '_maxdoas_processed.mat'];
+% last folder in path
+input_version=strsplit(file_dir,'/');
+input_version=input_version{end-1};
+
+% default location
+if strcmp(input_version,'retrieval_input'), input_version=''; end
+
+% output folder name, given input and a priori settings
+output_version=['p' num2str(p_num) '_' input_version '_' ap_model ap_surfPT_str '/'];
+
+disp(' ')
+disp('Output folder based on input file location and settings in the code:')
+disp(output_version)
+disp('Continue? [y]/n')
+
+tmp=input('','s');
+
+if isempty(tmp) || strcmpi(tmp,'y')
+    input_version=[input_version '/'];
+    file_dir=file_dir(1:end-length(input_version));
+else
+    return
+end
+    
+
+%% load data
+% files saved by reformat_pandora_for_retrievals.m
+fname=[file_dir input_version 'p' num2str(p_num) '_' uvvis '_' num2str(yr_in) ...
+       '_maxdoas_processed.mat'];
 
 try
     load(fname);
@@ -59,6 +97,7 @@ table_in=pan_maxdoas_processed;
 if any(p_num==[103,104])
  
     % ECCC Downsview
+    location.name='downsview';
     location.lat=43.7810; 
     location.lon=-79.4680;
     location.alt_station=187; 
@@ -361,7 +400,7 @@ for i=unique(time_steps)'
     end
     
     
-    %% get NCEP profiles of pressure, temperature
+    %% get a priori profiles of pressure, temperature
     % should have one profile per elevation sequence
     
     % calculate mean time for each sequence: use datenum field, convert
@@ -369,21 +408,33 @@ for i=unique(time_steps)'
     tmp=find_in_cell(columns_new,'datenum');
     scan_mean_time=to_write(:,:,tmp);
     scan_mean_time=datetime(nanmean(scan_mean_time,2),'convertfrom','datenum');
-    
-    % retrieve NCEP profiles (daily, all profiles for given day will have
-    % identical P, T profiles)
-    [ P_NCEP, T_NCEP, alt_grid_NCEP ] = get_NCEP_PT(scan_mean_time);
 
-    % convert alt grid to km (P is lready in hPa and T is in K)
-    alt_grid_NCEP=alt_grid_NCEP/1000;
+    if strcmp(ap_model,'NCEP')
+        
+        % retrieve NCEP profiles (daily, all profiles for given day will have
+        % identical P, T profiles)
+        [ P_apriori, T_apriori, alt_grid_apriori ] = get_NCEP_PT(scan_mean_time);
+
+        % convert alt grid to km (P is lready in hPa and T is in K)
+        alt_grid_apriori=alt_grid_apriori/1000;
     
+    elseif strcmp(ap_model,'ERA5')
+       
+        % retrieve ERA5 profiles (daily, all profiles for given day will have
+        % identical P, T profiles)
+        [ P_apriori, T_apriori, alt_grid_apriori ] = get_ERA5_PT(scan_mean_time,location.name);
+
+        % convert alt grid to km (P is lready in hPa and T is in K)
+        alt_grid_apriori=alt_grid_apriori/1000;
+        
+    end
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
     %% Write data to file
     
     % create output folder
     % data is saved separately for each instument and wavelength range
-    savedir=[file_dir 'MAPA_input_p' num2str(p_num) '_' uvvis '/'];
+    savedir=[file_dir 'MAPA_input/' output_version];
     
     % create folder if necessary
     if ~exist(savedir,'dir'), mkdir(savedir), end
@@ -398,7 +449,7 @@ for i=unique(time_steps)'
         if exist(f_out,'file'), delete(f_out); end
 
         % write data
-        write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,P_NCEP,T_NCEP,alt_grid_NCEP)
+        write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,P_apriori,T_apriori,alt_grid_apriori)
         
     end
     
@@ -416,7 +467,7 @@ for i=unique(time_steps)'
 
             % write data
             write_nc(f_out,uvvis,to_write(long_to_save,:,:),elevs_saved,location,columns_new,...
-                     P_NCEP(long_to_save,:),T_NCEP(long_to_save,:),alt_grid_NCEP)
+                     P_apriori(long_to_save,:),T_apriori(long_to_save,:),alt_grid_apriori)
         end
         
         %%% short scans
@@ -434,7 +485,7 @@ for i=unique(time_steps)'
             
             % write data
             write_nc(f_out,uvvis,to_write(short_to_save,:,:),elevs_saved(~short_tmp),location,...
-                     columns_new, P_NCEP(short_to_save,:),T_NCEP(short_to_save,:),alt_grid_NCEP)
+                     columns_new, P_apriori(short_to_save,:),T_apriori(short_to_save,:),alt_grid_apriori)
         end
              
     end

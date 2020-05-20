@@ -1,4 +1,4 @@
-function [pan_maxdoas_processed,scan_times]=...
+ function [pan_maxdoas_processed,scan_times]=...
             reformat_pandora_for_retrievals( p_num, uvvis, yr_in, savedir )
 %Insert 90 deg measurements into QDOAS output files for Pandora data
 %
@@ -34,10 +34,10 @@ disp('Make sure QDOAS files are read by merge_pandora_dscds.m,')
 disp(' ')
 
 %% setup
-% load QDOAS data (has to be reformatted by read_maxdoas_table_pandora.m first)
+% load QDOAS data (has to be saved by merge_pandora_dscds.m)
 filename=['Pandora_' num2str(p_num) '_' uvvis '_' num2str(yr_in) '.mat'];
-filedir='/home/kristof/work/PANDORA/profiling/QDOAS_output/spec_v4';
 
+filedir='/home/kristof/work/PANDORA/profiling/QDOAS_output/spec_v4/';
 disp(' ')
 disp('Using QDOAS_output/spec_v4 as default source')
 
@@ -73,13 +73,6 @@ retr_start_col=find(strcmp(table_in.Properties.VariableNames,'O3_VisRMS'));
 % expected possible elevation angles in file
 elevs_expected=[1,2,3,5,8,10,15,20,30,40,50,90];
 
-
-% remove datetime column (recalculated at the end)
-try
-    table_in.DateTime=[];
-catch
-    error('Check if files were processed the same way as in read_maxdoas_table_pandora.m (DateTime column missing)')
-end
 
 % gap tolerance
 % max accepted time difference between consecutive measurements -- if time
@@ -131,7 +124,7 @@ if length(az_list)>1
 end
 
 
-%% format date/time fields properly
+%% format date/time fields properly, and get rid of missing times
 table_in.Timehhmmss.Format='HH:mm:ss';
 table_in.DateDDMMYYYY.Format='dd/MM/yyyy';
 
@@ -139,7 +132,7 @@ table_in.Timehhmmss.Year=table_in.DateDDMMYYYY.Year;
 table_in.Timehhmmss.Month=table_in.DateDDMMYYYY.Month;
 table_in.Timehhmmss.Day=table_in.DateDDMMYYYY.Day;
 
-%% get rid of missing times
+% get rid of missing times
 ind_nat=isnat(table_in.Timehhmmss);
 ind_ok=~isnat(table_in.Timehhmmss);
 
@@ -153,6 +146,31 @@ end
 
 scan_times=table;
 
+
+%% add smoothness filter
+% do it before any formatting so bad data (e.g. days with high RMS) can be removed
+% filter values will be messed up for 90deg dummies, but those lines are
+% discarded for MAPA anyway (and extra columns don't impact HEIPRO processing)
+
+[ind_bad_ci, ind_bad_o4, ind_bad_rms] = pandora_dSCD_filter(table_in);
+
+% add cloud flag (possible values: 0, 1, 2, 3)
+table_in.cloud_flag=zeros(size(table_in,1),1); % good data: flag is 0
+table_in.cloud_flag(ind_bad_ci & ~ind_bad_o4)=1; % only ci smoothness off
+table_in.cloud_flag(ind_bad_o4 & ~ind_bad_ci)=2; % only O4 smoothness off
+table_in.cloud_flag(ind_bad_ci & ind_bad_o4)=3; % both ci and O4 smoothness off
+
+% remove data with high RMS
+table_in(ind_bad_rms,:)=[];
+
+% add color index column for later
+table_in.ci=table_in.Fluxes330./table_in.Fluxes440;
+
+% remove datetime column (was needed for pandora_dSCD_filter, will be recalculated at the end)
+table_in.DateTime=[];
+
+
+%%
 %%%%
 %%%% insert 90 deg dummy lines into entire dataset (likely one year)
 %%%%
@@ -531,8 +549,13 @@ pan_maxdoas_processed=table_in;
 %% save results
 
 if nargin==4
+    
     if ~strcmp(savedir(end),'/'), savedir=[savedir, '/']; end
+    if ~exist(savedir,'dir'), mkdir(savedir); end
+    
     save([savedir 'p' num2str(p_num) '_' uvvis '_' num2str(yr_in) '_maxdoas_processed.mat'],'pan_maxdoas_processed')
+else
+    disp('Results not saved')
 end
 
 end

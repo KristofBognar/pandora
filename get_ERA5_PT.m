@@ -21,8 +21,8 @@ function [ P_out, T_out, alt_grid_out ] = get_ERA5_PT(dates_in_datetime, loc_in,
 %                 pressure level in the 2018 ERA5 files
 %                 UNITS must be meters!!
 %
-% OUTPUT: P,T output is daily average, and values are repeated for input times on
-%         the same day, so the dimensions match
+% OUTPUT: P,T output is daily average (DAYTIME ONLY: mean of 11:00,14:00,17:00,20:00,23:00 UTC)
+%         values are repeated for input times on the same day, so the dimensions match
 %       P_out: Pressure in hPa, interpolated linearly
 %       T_out: Temperature in K, interpolated linearly
 %       alt_grid_out: altitude in meters corresponding to P_out and T_out

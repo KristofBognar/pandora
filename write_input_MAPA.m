@@ -38,15 +38,19 @@ elseif nargin<5
 end
 
 % a priori selection
+% % ap_model='NCEP';
 ap_model='ERA5';
-ap_surfPT=0;
+% ap_model='surfPT';
 
-if ap_surfPT==0
-    ap_surfPT_str='_no_surfPT';
-else
-    ap_surfPT_str='';
-end 
-
+% % left over from test retrievals
+% ap_surfPT=1;
+% if ap_surfPT==0
+%     ap_surfPT_str='_no_surfPT';
+% else
+%     ap_surfPT_str='';
+% end 
+ap_surfPT_str='';
+    
 %% set input/output folder naming
 if ~strcmp(file_dir(end),'/'), file_dir=[file_dir, '/']; end
 
@@ -124,7 +128,8 @@ table_in.RAA=abs(table_in.SolarAzimuthAngle-(table_in.Azimviewingangle-180));
 % keep relevant columns only
 columns_orig = table_in.Properties.VariableNames;
 columns_new = {'DateTime','Elevviewingangle','Azimviewingangle',...
-               'SZA','SolarAzimuthAngle','RAA',...     
+               'SZA','SolarAzimuthAngle','RAA',...
+               'Fluxes330','Fluxes380','Fluxes440','cloud_flag',...     
                'NO2_VisSlColno2','NO2_VisSlErrno2','NO2_VisSlColo4','NO2_VisSlErro4'};
 [~,tmp] = ismember(columns_new,columns_orig);
 table_in = table_in(:,tmp);
@@ -139,6 +144,8 @@ columns_new=[columns_new, 'datenum'];
 % some indices for later
 elevs_page=find_in_cell(columns_new,'Elevviewingangle');
 
+% table to store cloud flag array
+cloud_flag=table();
 
 %% elevation angles -- some of the code is hard coded for:
 %           30,     15,              2, 1, and up (tagged as shortscan==1)
@@ -262,7 +269,7 @@ for i=unique(time_steps)'
                       to_write(seq_curr(end)+1:end,:)];
 
         elseif isequal(elevs_curr',elevs_long)
-            % if it's a complete short scan, assign accordingly
+            % if it's a complete long scan, assign accordingly
 
             % reorder current down-up sequence as up-up, with 1deg
             % measurement duplicated
@@ -332,7 +339,7 @@ for i=unique(time_steps)'
                       to_write(seq_curr(end)+1:end,:)];
 
         else
-            error('Congrats, you''ve managed what was once thought impossible')
+            error('Congrats, you''ve managed to do what was once thought impossible')
             % should not have any scans here
         end
               
@@ -426,6 +433,14 @@ for i=unique(time_steps)'
 
         % convert alt grid to km (P is lready in hPa and T is in K)
         alt_grid_apriori=alt_grid_apriori/1000;
+
+    elseif strcmp(ap_model,'surfPT')
+       
+        % interpolated surface pressure and temperature
+        [ P_apriori, T_apriori ] = get_insitu_PT(scan_mean_time,location.name,'interp');
+
+        % single altitude in km
+        alt_grid_apriori=0.01;
         
     end
     
@@ -489,9 +504,32 @@ for i=unique(time_steps)'
         end
              
     end
-        
+    
+    %% collect flagging results
+    tmp=find_in_cell(columns_new,'cloud_flag');
+    
+    % extract seq by elev array of flags, and add total flag
+    tmp=to_write(:,:,tmp);
+    tmp=[tmp,max(tmp,[],2)];
+    
+    % convert to table
+    cloud_flag_tmp=array2table(tmp,'variablenames',...
+                               {'ea_1','ea_2','ea_3','ea_5','ea_8','ea_10','ea_15','ea_20',...
+                                'ea_30','ea_40','ea_50','ea_all'});
+    
+    % add scan mean time, and reorganize columns
+    cloud_flag_tmp.mean_time=scan_mean_time;
+    cloud_flag_tmp=cloud_flag_tmp(:,[13,1:12]);
+    
+    % save
+    cloud_flag=[cloud_flag; cloud_flag_tmp];
         
 end
+
+%% save flagging results as text file
+f_out=[savedir 'cloud_flag_p' num2str(p_num) '_' uvvis '_' num2str(yr_in) '.dat'];
+
+writetable(cloud_flag,f_out,'Delimiter',',');
 
 end
 
@@ -525,9 +563,9 @@ function write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,...
     % set fit window wavelength ranges
     % assuming CINI-2 fir windows
     if strcmp(uvvis,'vis')
-        lambda_range='425to490nm';
+        lambda_range='fw425to490nm';
     elseif strcmp(uvvis,'uv')
-        lambda_range='338to370nm';
+        lambda_range='fw338to370nm';
     end
     
     % aerosols
@@ -598,7 +636,33 @@ function write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,...
     instr_alt = netcdf.defVar(grp_loc,'altitude_of_instrument','NC_DOUBLE',dim_seq);
     set_attr(grp_loc,instr_alt,NaN,'Altitude of the instrument above sea level','m')
 
-    % auxiliary data (NOT PROVIDED, but has to be in the file)
+    % radiances
+    tmp = netcdf.defGrp(ncid,'radiance');
+    grp_f330=netcdf.defGrp(tmp,'rad_330');
+
+    var_f330 = netcdf.defVar(grp_f330,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
+    set_attr(grp_f330,var_f330,NaN,'Flux at 330 nm','arbitrary')
+
+    var_f330err = netcdf.defVar(grp_f330,'error','NC_DOUBLE',[dim_elevs,dim_seq]);
+    set_attr(grp_f330,var_f330err,NaN,'Uncertainty of flux at 330 nm','arbitrary')
+
+    grp_f380=netcdf.defGrp(tmp,'rad_380');
+
+    var_f380 = netcdf.defVar(grp_f380,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
+    set_attr(grp_f380,var_f380,NaN,'Flux at 380 nm','arbitrary')
+
+    var_f380err = netcdf.defVar(grp_f380,'error','NC_DOUBLE',[dim_elevs,dim_seq]);
+    set_attr(grp_f380,var_f380err,NaN,'Uncertainty of flux at 380 nm','arbitrary')
+
+    grp_f440=netcdf.defGrp(tmp,'rad_440');
+
+    var_f440 = netcdf.defVar(grp_f440,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
+    set_attr(grp_f440,var_f440,NaN,'Flux at 440 nm','arbitrary')
+
+    var_f440err = netcdf.defVar(grp_f440,'error','NC_DOUBLE',[dim_elevs,dim_seq]);
+    set_attr(grp_f440,var_f440err,NaN,'Uncertainty of flux at 440 nm','arbitrary')
+    
+    % auxiliary data (has to be in the file even if no variables are included)
     grp_aux = netcdf.defGrp(ncid,'auxiliary');
 
 %     var_o4vcd = netcdf.defVar(grp_aux,'o4vcd','NC_DOUBLE',dim_seq);
@@ -663,9 +727,20 @@ function write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,...
     % station longitude
     netcdf.putVar(grp_loc,instr_lon,ones(n_seq,1)*location.lon);
     
+    %%% radiances
+    tmp=find_in_cell(columns_new,'Fluxes330');
+    netcdf.putVar(grp_f330,var_f330,to_write(:,:,tmp)');
+
+    tmp=find_in_cell(columns_new,'Fluxes380');
+    netcdf.putVar(grp_f380,var_f380,to_write(:,:,tmp)');
+
+    tmp=find_in_cell(columns_new,'Fluxes440');
+    netcdf.putVar(grp_f440,var_f440,to_write(:,:,tmp)');
+    
     % fill o4 VCD with NaNs
 %     netcdf.putVar(grp_aux,var_o4vcd,nan(n_seq,1));
     
+
     netcdf.close(ncid);
     
 end

@@ -561,7 +561,7 @@ function write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,...
     %% data groups and variables
     
     % set fit window wavelength ranges
-    % assuming CINI-2 fir windows
+    % assuming CINI-2 fit windows
     if strcmp(uvvis,'vis')
         lambda_range='fw425to490nm';
     elseif strcmp(uvvis,'uv')

@@ -59,6 +59,9 @@ end
 yr=unique(year(dates_in_datetime));
 if length(yr)>1, error('Call GET_ERA5_PT one year at a time'), end
 
+% current year
+yr_now=year(datetime(now,'convertfrom','datenum'));
+
 % return altitude grid
 alt_grid_out=alt_grid;
 
@@ -97,12 +100,40 @@ era5_datenum=floor(times/24 + pivot_time);
 
 %% find nearest point
 
+% coordinates
 [~,ind_lon]=min(abs(lon-location.lon));
 [~,ind_lat]=min(abs(lat-location.lat));
 
-% reduce array sizes
-z_data=squeeze(z_data(ind_lon,ind_lat,:,:));
-t_data=squeeze(t_data(ind_lon,ind_lat,:,:));
+% check for ERA5T (near real time) preliminary data
+% expver variable exist in file, 1 for ERA5, 5 for ERA5T
+try % expver exists: recent data
+    
+    tmp=double(ncread([era5_loc fname],'expver'));
+    if yr~=yr_now, error('Near real time data found in file'); end
+    
+    % reduce array sizes
+    % both datasets are the same size, one dataset is all NaN where the
+    % other has data
+    z_data1=squeeze(z_data(ind_lon,ind_lat,:,1,:));
+    t_data1=squeeze(t_data(ind_lon,ind_lat,:,1,:));
+   
+    z_data2=squeeze(z_data(ind_lon,ind_lat,:,2,:));
+    t_data2=squeeze(t_data(ind_lon,ind_lat,:,2,:));
+
+    % replace NaN values with data from second array
+    z_data1(:,isnan(z_data1(1,:)))=z_data2(:,isnan(z_data1(1,:)));
+    t_data1(:,isnan(t_data1(1,:)))=t_data2(:,isnan(t_data1(1,:)));
+    
+    z_data=z_data1;
+    t_data=t_data1;
+    
+catch % expver doesn't exist, consolidated data
+
+    % reduce array sizes
+    z_data=squeeze(z_data(ind_lon,ind_lat,:,:));
+    t_data=squeeze(t_data(ind_lon,ind_lat,:,:));
+
+end
 
 %% interpolate data
 for i=1:length(days_in)

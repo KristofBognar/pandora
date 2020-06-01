@@ -22,6 +22,7 @@ function write_input_MAPA( p_num, uvvis, yr_in, file_dir, out_type, split_scans 
 %
 % OUTPUT:   daily/weekly/monthly dSCD files in MAPA's netCDF format
 %           Data is saved in a new folder in file_dir
+%           NetCDF format is hardcoded! 
 %
 %
 % Kristof Bognar, January 2020
@@ -57,6 +58,11 @@ if ~strcmp(file_dir(end),'/'), file_dir=[file_dir, '/']; end
 % last folder in path
 input_version=strsplit(file_dir,'/');
 input_version=input_version{end-1};
+
+% support v5 and later only
+if str2double(input_version(end))<5
+    error('Check out old version from git to process old QDOAS format');
+end
 
 % default location
 if strcmp(input_version,'retrieval_input'), input_version=''; end
@@ -127,10 +133,29 @@ table_in.RAA=abs(table_in.SolarAzimuthAngle-(table_in.Azimviewingangle-180));
 
 % keep relevant columns only
 columns_orig = table_in.Properties.VariableNames;
-columns_new = {'DateTime','Elevviewingangle','Azimviewingangle',...
-               'SZA','SolarAzimuthAngle','RAA',...
-               'Fluxes330','Fluxes380','Fluxes440','cloud_flag',...     
-               'NO2_VisSlColno2','NO2_VisSlErrno2','NO2_VisSlColo4','NO2_VisSlErro4'};
+
+% % spec_v2 and spec_v4
+% columns_new = {'DateTime','Elevviewingangle','Azimviewingangle',...
+%                'SZA','SolarAzimuthAngle','RAA',...
+%                'Fluxes330','Fluxes380','Fluxes440','cloud_flag',...     
+%                'NO2_VisSlColno2','NO2_VisSlErrno2','NO2_VisSlColo4','NO2_VisSlErro4'};
+
+switch uvvis
+    case 'vis'
+        columns_new = {'DateTime','Elevviewingangle','Azimviewingangle',...
+                       'SZA','SolarAzimuthAngle','RAA',...
+                       'Fluxes330','Fluxes380','Fluxes440','cloud_flag',...     
+                       'NO2_VisSlColno2','NO2_VisSlErrno2','NO2_VisSlColo4','NO2_VisSlErro4',...
+                       'NO2_UVSlColno2','NO2_UVSlErrno2','NO2_UVSlColo4','NO2_UVSlErro4',...
+                       'HCHOSlColhcho','HCHOSlErrhcho'};
+    case 'uv'
+        columns_new = {'DateTime','Elevviewingangle','Azimviewingangle',...
+                       'SZA','SolarAzimuthAngle','RAA',...
+                       'Fluxes330','Fluxes380','Fluxes440','cloud_flag',...     
+                       'NO2_UVSlColno2','NO2_UVSlErrno2','NO2_UVSlColo4','NO2_UVSlErro4',...
+                       'HCHOSlColhcho','HCHOSlErrhcho'};
+end
+
 [~,tmp] = ismember(columns_new,columns_orig);
 table_in = table_in(:,tmp);
 
@@ -201,6 +226,9 @@ for i=unique(time_steps)'
     
     % 90deg lines now indicate finished down-up scans
     ind_90=find(to_write.Elevviewingangle==90);
+    
+    % we need at least one complete scan
+    if length(ind_90)==1, continue, end
     
     % loop over each down-up scan
     for j=1:length(ind_90)
@@ -564,12 +592,16 @@ function write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,...
     % assuming CINI-2 fit windows
     if strcmp(uvvis,'vis')
         lambda_range='fw425to490nm';
+        lambda_range_2='fw338to370nm';
     elseif strcmp(uvvis,'uv')
         lambda_range='fw338to370nm';
     end
+    lambda_range_hcho='fw336to359nm';
     
-    % aerosols
+    %% aerosols
     tmp = netcdf.defGrp(ncid,'aerosol');
+    
+    % primary UV or Vis window
     grp_aer=netcdf.defGrp(tmp,['o4_' lambda_range ]);
 
     var_o4 = netcdf.defVar(grp_aer,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
@@ -578,19 +610,51 @@ function write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,...
     var_o4err = netcdf.defVar(grp_aer,'error','NC_DOUBLE',[dim_elevs,dim_seq]);
     set_attr(grp_aer,var_o4err,NaN,'o4_slant_column_error','molec**2/cm**5')
 
+    % UV vindow included for 'OPEN' spectra
+    if strcmp(uvvis,'vis') 
+        grp_aer_2=netcdf.defGrp(tmp,['o4_' lambda_range_2 ]);
 
-    % tracegas
+        var_o4_2 = netcdf.defVar(grp_aer_2,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
+        set_attr(grp_aer_2,var_o4_2,NaN,'o4_slant_column','molec**2/cm**5')
+
+        var_o4err_2 = netcdf.defVar(grp_aer_2,'error','NC_DOUBLE',[dim_elevs,dim_seq]);
+        set_attr(grp_aer_2,var_o4err_2,NaN,'o4_slant_column_error','molec**2/cm**5')
+    end
+    
+    %% tracegas
     tmp = netcdf.defGrp(ncid,'tracegas');
-    grp_tg=netcdf.defGrp(tmp,['no2_' lambda_range ]);
+    
+    % primary UV or Vis window
+    grp_no2=netcdf.defGrp(tmp,['no2_' lambda_range ]);
 
-    var_no2 = netcdf.defVar(grp_tg,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
-    set_attr(grp_tg,var_no2,NaN,'no2_slant_column','molec/cm**2')
+    var_no2 = netcdf.defVar(grp_no2,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
+    set_attr(grp_no2,var_no2,NaN,'no2_slant_column','molec/cm**2')
 
-    var_no2err = netcdf.defVar(grp_tg,'error','NC_DOUBLE',[dim_elevs,dim_seq]);
-    set_attr(grp_tg,var_no2err,NaN,'no2_slant_column_error','molec/cm**2')
+    var_no2err = netcdf.defVar(grp_no2,'error','NC_DOUBLE',[dim_elevs,dim_seq]);
+    set_attr(grp_no2,var_no2err,NaN,'no2_slant_column_error','molec/cm**2')
 
+    % UV vindow included for 'OPEN' spectra
+    if strcmp(uvvis,'vis') 
+        grp_no2_2=netcdf.defGrp(tmp,['no2_' lambda_range_2 ]);
 
-    % measurement info
+        var_no2_2 = netcdf.defVar(grp_no2_2,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
+        set_attr(grp_no2_2,var_no2_2,NaN,'no2_slant_column','molec/cm**2')
+
+        var_no2err_2 = netcdf.defVar(grp_no2_2,'error','NC_DOUBLE',[dim_elevs,dim_seq]);
+        set_attr(grp_no2_2,var_no2err_2,NaN,'no2_slant_column_error','molec/cm**2')
+    end
+    
+    % HCHO included for both UV and Vis
+    grp_hcho=netcdf.defGrp(tmp,['hcho_' lambda_range_hcho ]);
+
+    var_hcho = netcdf.defVar(grp_hcho,'value','NC_DOUBLE',[dim_elevs,dim_seq]);
+    set_attr(grp_hcho,var_hcho,NaN,'hcho_slant_column','molec/cm**2')
+
+    var_hchoerr = netcdf.defVar(grp_hcho,'error','NC_DOUBLE',[dim_elevs,dim_seq]);
+    set_attr(grp_hcho,var_hchoerr,NaN,'hcho_slant_column_error','molec/cm**2')
+    
+    
+    %% measurement info
     grp_meas = netcdf.defGrp(ncid,'measurement_info');
 
     var_ind = netcdf.defVar(grp_meas,'scan_idx','NC_INT',dim_seq);
@@ -609,7 +673,7 @@ function write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,...
     set_attr(grp_meas,var_elev,NaN,'elevation_angle','degree')
 
 
-    % a priori temperature, pressure profiles
+    %% a priori temperature, pressure profiles
     grp_pt = netcdf.defGrp(ncid,'atmosphere');
 
     var_h = netcdf.defVar(grp_pt,'height','NC_DOUBLE',[dim_pt,dim_seq]);
@@ -636,7 +700,8 @@ function write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,...
     instr_alt = netcdf.defVar(grp_loc,'altitude_of_instrument','NC_DOUBLE',dim_seq);
     set_attr(grp_loc,instr_alt,NaN,'Altitude of the instrument above sea level','m')
 
-    % radiances
+    %% radiances
+    % all wavelengths are included in both UV and Vis, 440 is all 0 for UV
     tmp = netcdf.defGrp(ncid,'radiance');
     grp_f330=netcdf.defGrp(tmp,'rad_330');
 
@@ -662,7 +727,7 @@ function write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,...
     var_f440err = netcdf.defVar(grp_f440,'error','NC_DOUBLE',[dim_elevs,dim_seq]);
     set_attr(grp_f440,var_f440err,NaN,'Uncertainty of flux at 440 nm','arbitrary')
     
-    % auxiliary data (has to be in the file even if no variables are included)
+    %% auxiliary data (has to be in the file even if no variables are included)
     grp_aux = netcdf.defGrp(ncid,'auxiliary');
 
 %     var_o4vcd = netcdf.defVar(grp_aux,'o4vcd','NC_DOUBLE',dim_seq);
@@ -673,19 +738,50 @@ function write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,...
     %% write variables
     netcdf.endDef(ncid); %enter data mode
 
+    % set search strings
+    switch uvvis
+        case 'vis'
+            fw_str='Vis';
+        case 'uv'
+            fw_str='UV';
+    end
+    
+    
     %%% aerosols
-    tmp=find_in_cell(columns_new,'NO2_VisSlColo4');
+    tmp=find_in_cell(columns_new,['NO2_' fw_str 'SlColo4']);
     netcdf.putVar(grp_aer,var_o4,to_write(:,:,tmp)');
 
-    tmp=find_in_cell(columns_new,'NO2_VisSlErro4');
+    tmp=find_in_cell(columns_new,['NO2_' fw_str 'SlErro4']);
     netcdf.putVar(grp_aer,var_o4err,to_write(:,:,tmp)');
     
-    %%% tracegas
-    tmp=find_in_cell(columns_new,'NO2_VisSlColno2');
-    netcdf.putVar(grp_tg,var_no2,to_write(:,:,tmp)');
+    if strcmp(uvvis,'vis') 
+        tmp=find_in_cell(columns_new,'NO2_UVSlColo4');
+        netcdf.putVar(grp_aer_2,var_o4_2,to_write(:,:,tmp)');
+
+        tmp=find_in_cell(columns_new,'NO2_UVSlErro4');
+        netcdf.putVar(grp_aer_2,var_o4err_2,to_write(:,:,tmp)');
+    end
     
-    tmp=find_in_cell(columns_new,'NO2_VisSlErrno2');
-    netcdf.putVar(grp_tg,var_no2err,to_write(:,:,tmp)');
+    %%% tracegas
+    tmp=find_in_cell(columns_new,['NO2_' fw_str 'SlColno2']);
+    netcdf.putVar(grp_no2,var_no2,to_write(:,:,tmp)');
+    
+    tmp=find_in_cell(columns_new,['NO2_' fw_str 'SlErrno2']);
+    netcdf.putVar(grp_no2,var_no2err,to_write(:,:,tmp)');
+    
+    if strcmp(uvvis,'vis') 
+        tmp=find_in_cell(columns_new,'NO2_UVSlColno2');
+        netcdf.putVar(grp_no2_2,var_no2_2,to_write(:,:,tmp)');
+
+        tmp=find_in_cell(columns_new,'NO2_UVSlErrno2');
+        netcdf.putVar(grp_no2_2,var_no2err_2,to_write(:,:,tmp)');
+    end    
+    
+    tmp=find_in_cell(columns_new,'HCHOSlColhcho');
+    netcdf.putVar(grp_hcho,var_hcho,to_write(:,:,tmp)');
+
+    tmp=find_in_cell(columns_new,'HCHOSlErrhcho');
+    netcdf.putVar(grp_hcho,var_hchoerr,to_write(:,:,tmp)');
     
     %%% measurement info
     % scan number

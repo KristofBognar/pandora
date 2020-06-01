@@ -260,6 +260,7 @@ data.SZA=SZA_arr;
 data.SAA=SAA_arr;
 
 data.spec=spec;
+data.wl=wl;
 
 end
 

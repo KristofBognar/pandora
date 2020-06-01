@@ -22,14 +22,38 @@ function write_input_HEIPRO( p_num, uvvis, yr_in, file_dir, out_type, split_scan
 %
 % Kristof Bognar, August 2019
 
-%% load data
-% files saved by reformat_pandora_for_retrievals.m
-
-error('match mapa input file naming')
-
+%% set input/output folder naming
 if ~strcmp(file_dir(end),'/'), file_dir=[file_dir, '/']; end
 
-fname=[file_dir 'p' num2str(p_num) '_' uvvis '_' num2str(yr_in) '_maxdoas_processed.mat'];
+% last folder in path
+input_version=strsplit(file_dir,'/');
+input_version=input_version{end-1};
+
+% default location
+if strcmp(input_version,'retrieval_input'), input_version=''; end
+
+% output folder name, given input and a priori settings
+output_version=['p' num2str(p_num) '_' input_version '/'];
+
+disp(' ')
+disp('Output folder based on input file location and settings in the code:')
+disp(output_version)
+disp('Continue? [y]/n')
+
+tmp=input('','s');
+
+if isempty(tmp) || strcmpi(tmp,'y')
+    input_version=[input_version '/'];
+    file_dir=file_dir(1:end-length(input_version));
+else
+    return
+end
+    
+
+%% load data
+% files saved by reformat_pandora_for_retrievals.m
+fname=[file_dir input_version 'p' num2str(p_num) '_' uvvis '_' num2str(yr_in) ...
+       '_maxdoas_processed.mat'];
 
 try
     load(fname);
@@ -44,7 +68,7 @@ table_in=pan_maxdoas_processed;
 
 % create output folder
 % data is saved separately for each instument and wavelength range
-savedir=[file_dir 'HEIPRO_input_p' num2str(p_num) '_' uvvis '/'];
+savedir=[file_dir 'HEIPRO_input/' output_version];
 
 % create folder if necessary
 if ~exist(savedir,'dir'), mkdir(savedir), end

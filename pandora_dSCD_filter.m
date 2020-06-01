@@ -1,4 +1,4 @@
-function [ind_bad_ci, ind_bad_o4, ind_bad_rms] = pandora_dSCD_filter(data,rms_lim,smooth_window,N_min)
+function [ind_bad_ci, ind_bad_o4, ind_bad_rms] = pandora_dSCD_filter(data,cols_in,rms_lim,smooth_window,N_min)
 % [smooth_ci, smooth_o4, bad_rms] = pandora_dSCD_filter(data,rm_rms,smooth_window,N_min)
 % filter pandora MAX-DOAS dSCDs based on rms and CI, O4 smoothness
 %
@@ -6,38 +6,50 @@ function [ind_bad_ci, ind_bad_o4, ind_bad_rms] = pandora_dSCD_filter(data,rms_li
 %
 % INPUT: 
 %   data: Raw QDOAS data saved in matlab format
-%   optinal inputs (must provide all or none):
-%       rms_lim: RMS cutoff for all elevation angles (data above cutoff are
-%                not included in smoothness calculation)
-%       smooth_window: length of smoothing window to use in CI, O4
-%                      smoothing. Actual input is fraction of datapoints per day,
-%                      this is calculated as the smooth_window divided by the length of
-%                      the measurement period for the given day
-%       N_min: minimum number of datapoints for smoothing. Days with fewer
-%              points (or duration shorter than smooth_window) are flagges as bad data. 
+%   cols_in: cell, names of analysis windows (or names of RMS columns) in the file
+%   rms_lim: RMS cutoff for all elevation angles
+%            Single value, or same size as cols_in
+%   smooth_window: length of smoothing window to use in CI, O4
+%                  smoothing. Actual input is fraction of datapoints per day,
+%                  this is calculated as the smooth_window divided by the length of
+%                  the measurement period for the given day
+%   N_min: minimum number of datapoints for smoothing. Days with fewer
+%          points (or duration shorter than smooth_window) are flagges as bad data. 
 %           
 % OUTPUT:logical indices of bad ci, O4 and RMS values, same lengths as the input data
 % 
 %@Kristof Bognar, May 2020
 
-% setup
-if nargin==1
-    
-    % set default parameters 
-    rms_lim=0.003; % RMS cutoff
-    smooth_window=3; % smoothing window in hours, also min interval of daily data to do smoothing
-    N_min=10; % min number of data points to do smoothing
-    
-elseif nargin~=4
-    
-    error('Provide all parameters, or use default values (pass data table only)')
-    
+ 
+if length(rms_lim)==1
+    rms_lim=repmat(rms_lim,1,length(cols_in));
+elseif length(rms_lim)~=length(cols_in)
+    error('rms_lim must be either single value, or same size as cols_in')
 end
 
- 
+disp('RMS limit used:')
+disp(rms_lim)
+
 % filter high RMS -- remove bad datapoints so they're not included in the
 % smoothness check (or the retrievals)
-ind_bad_rms=data.NO2_VisRMS>rms_lim;
+ind_bad_rms=false(size(data,1),length(cols_in));
+for i=1:length(cols_in)
+    
+    % find RMS column
+    if strcmp(cols_in{i}(end-2:end),'RMS')
+        tmp=cols_in{i};
+    else
+        tmp=[cols_in{i} 'RMS'];
+    end
+    
+    % get column index
+    col_ind=find(strcmp(data.Properties.VariableNames,tmp));
+    if isempty(col_ind), error('RMS column not found'); end
+    
+    % filter RMS
+    ind_bad_rms(:,i)=data{:,col_ind}>rms_lim(i);
+    
+end
 
 % calculate color index
 % wavelengths (but not this exact pair) from Wagner et al. 2014, 2016
@@ -47,7 +59,7 @@ ci=data.Fluxes330./data.Fluxes440;
 try
     day_local=day(data.DateTime-hours(5),'dayofyear');
 catch
-    error('Check if files were processed the same way as in read_maxdoas_table_pandora.m (DateTime column missing)')    
+    error('Check if files were processed the same way as in merge_pandora_dscds.m (DateTime column missing)')    
 end
 N_days=unique(day_local);
 
@@ -69,8 +81,8 @@ for i=1:length(N_days)
     % loop over all elevation angles
     for ea=[1,2,3,5,8,10,15,20,30,40,50]
         
-        % indices of given elev angle on current day (good RMS only)
-        ind=(data.Elevviewingangle==ea & day_local==N_days(i) & ~ind_bad_rms);
+        % indices of given elev angle on current day 
+        ind=(data.Elevviewingangle==ea & day_local==N_days(i));
 
         % skip given elev if all data is bad
         if sum(ind)==0, continue, end

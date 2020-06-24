@@ -93,6 +93,7 @@ end
 % loop over days/weeks/months
 steps_list=unique(time_steps);
 
+daily_times_all=[];
 for i=1:length(steps_list)
 
     % select data from given period
@@ -131,6 +132,9 @@ for i=1:length(steps_list)
         date_in=to_write_tmp.DateTime(1);
         create_retrieval_files_pandora(output_version,dscd_fname,date_in,daily_times,savedir_inp);
         
+        % save daily start/end times and dt
+        daily_times_all=[daily_times_all; [{datestr(date_in,'yyyymmdd')}, daily_times]];
+
 % %         %%% short scans
 % %         to_write_tmp=to_write(to_write.shortscan==1,:);
 % %         
@@ -158,6 +162,9 @@ for i=1:length(steps_list)
     end
         
 end
-        
+      
+save([file_dir 'HEIPRO_input/' output_version 'long_p' num2str(p_num) '_' uvvis '_' ...
+      num2str(yr_in) '_retr_times.mat'],'daily_times_all')
+
 end
 

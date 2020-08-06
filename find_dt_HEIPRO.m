@@ -1,6 +1,6 @@
-function [ times_out, table_out ] = find_dt_HEIPRO(table_in)
+function [ times_out, table_out ] = find_dt_HEIPRO(table_in,scan_type)
 %[ dt_out, t_lim, table_out ] = find_dt_HEIPRO(table_in)
-%   Detailed explanation goes here
+%   find optimal retrieval window for daily dSCD files
 
 %% setup
 
@@ -33,10 +33,14 @@ table_out=table_in;
 %% get time window stats
 
 % list of time intervals (in minutes)
-dt_list=20:1:120;
+if strcmp(scan_type,'long')
+    dt_list=20:1:120;
+elseif strcmp(scan_type,'short')
+    dt_list=3:1:60;
+end
 
 % get time window stats
-[out_arr,t_lim_arr]=scan_timing(dt_list,loc1,loc90,ft_start,ft_end);
+[out_arr,t_lim_arr]=scan_timing(dt_list,loc1,loc90,ft_start,ft_end,scan_type);
 
 %% select optimal time interval
 
@@ -64,7 +68,7 @@ else % no -- need to find best compromise
         
         ind_final=ind;
 
-    else % multiple dt with sam n.o. complete scans
+    else % multiple dt with same n.o. complete scans
         
         % decide by number of usable half-scans
         tmp=max(out_arr(ind,2)); % gives first match only
@@ -93,6 +97,10 @@ times_out{3}=num2str(dt_list(ind_final),'%.1f');
 
 %% check results
 if bad_dt
+
+    disp([datestr(table_in.DateTime(1),'mmm dd') ': half (extra) scans: ' ...
+         num2str(out_arr(ind_final,2)) '(' num2str(out_arr(ind_final,3)) ')/' num2str(n_scans)])
+    
 %     figure(99)
 % 
 %     plot(table_in.Fractionaltime,table_in.Elevviewingangle,'kx-'), hold on
@@ -102,11 +110,10 @@ if bad_dt
 %     
 %     title(datestr(table_in.DateTime(1),'mmm dd'))
 %     ylim([-20,110])
-%     uiwait;
+% %     uiwait;
+%     waitforbuttonpress;
+%     clf;
 
-    disp([datestr(table_in.DateTime(1),'mmm dd') ': half (extra) scans: ' ...
-         num2str(out_arr(ind_final,2)) '(' num2str(out_arr(ind_final,3)) ')/' num2str(n_scans)])
-    
 else
     
     disp([datestr(table_in.DateTime(1), 'mmm dd') ': good dt'])
@@ -115,7 +122,7 @@ end
 
 end
 
-function [ out_arr, t_lim_arr ] = scan_timing(dt,loc1,loc90,ft_start,ft_end)
+function [ out_arr, t_lim_arr ] = scan_timing(dt,loc1,loc90,ft_start,ft_end,scan_type)
     %%% based on input dt and start/end times, outputs number of time
     %%% windows that contain one full down-up scan
     
@@ -142,18 +149,55 @@ function [ out_arr, t_lim_arr ] = scan_timing(dt,loc1,loc90,ft_start,ft_end)
         % save time limits array
         t_lim_arr{i}=t_lim;
         
-        % number of 1deg and 90deg lines in each time bin
-        count1=histcounts(loc1,t_lim);
-        count90=histcounts(loc90,t_lim);
-
-        %%% number of windows with:
-        % correct mix of elev angles
-        out_arr(i,1)=sum( count1==1 & count90==2 );
-        % half a scan -- still OK
-        out_arr(i,2)=sum( count1==1 & count90==1 );
-        % more than one scan
-        out_arr(i,3)=sum( count90>2 );
+        if strcmp(scan_type,'long')
             
+            % simple approach -- already used in retrievals
+            % method for 'short' might be slightly better for long scans as
+            % well, but likely not much of a difference
+            
+            % number of 1deg and 90deg lines in each time bin
+            count1=histcounts(loc1,t_lim);
+            count90=histcounts(loc90,t_lim);
+
+            %%% number of windows with:
+            % correct mix of elev angles
+            out_arr(i,1)=sum( count1==1 & count90==2 );
+            % half a scan -- still OK
+            out_arr(i,2)=sum( count1==1 & count90==1 );
+            % more than one scan
+            out_arr(i,3)=sum( count90>2 );
+            
+        elseif strcmp(scan_type,'short')
+            
+            % halves of two scans often fit in one window -- code above
+            % counts those as good scans
+            % shouldn't me much of an issue for long scans, those are more
+            % spaced out (and gaps are longer)
+            for j=2:length(t_lim)
+                
+                ind90=find(loc90>=t_lim(j-1) & loc90<t_lim(j));
+                ind1=find(loc1>=t_lim(j-1) & loc1<t_lim(j));
+                
+                %%% number of windows with:
+                % correct mix of elev angles
+                if length(ind90)==2 && length(ind1)==1 
+                    if loc1(ind1)>loc90(ind90(1)) && loc1(ind1)<loc90(ind90(2))
+                        % actual complete scan
+                        out_arr(i,1)=out_arr(i,1)+1;
+                    else
+                        % 90deg from 2 different scans, count as half scan
+                        out_arr(i,2)=out_arr(i,2)+1;
+                    end
+                % half a scan    
+                elseif length(ind90)==1 && length(ind1)==1
+                    out_arr(i,2)=out_arr(i,2)+1;
+                % more than one scan
+                elseif length(ind90)>2
+                    out_arr(i,3)=out_arr(i,3)+1;
+                end
+                
+            end
+        end
     end
 end
 

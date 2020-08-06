@@ -88,12 +88,7 @@ disp(cols_in_file)
 % find first retrieval column (measurement info columns come first; assume
 % that first column is the RMS)
 % general info columns might change as people add columns with extra info
-switch uvvis
-    case 'vis'
-        retr_start_col=find(strcmp(table_in.Properties.VariableNames,[cols_in_file{1} 'RMS']));
-    case 'uv'
-        error('specify format')
-end
+retr_start_col=find(strcmp(table_in.Properties.VariableNames,[cols_in_file{1} 'RMS']));
 
 % version<5: make sure format of first few columns is the same (if not, change section
 % that adds dummy  90deg lines in middle of file)
@@ -212,14 +207,14 @@ switch uvvis
     case 'vis'
         rms_lim=0.003; % rms limit (could specify different values for each column)
     case 'uv'
-        error('specify RMS limits')
+        rms_lim=0.003; % works for UV windows as well (<~ 5% of data cut off, mostrly for sza>80)
 end
 
 smooth_window=3; % smoothing window in hours, also min interval of daily data to do smoothing
 N_min=10; % min number of data points to do smoothing
 
 % run smoothing function 
-[ind_bad_ci,ind_bad_o4,ind_bad_rms]=pandora_dSCD_filter(table_in,cols_in_file,...
+[ind_bad_ci,ind_bad_o4,ind_bad_rms]=pandora_dSCD_filter(table_in,cols_in_file,uvvis,...
                                                         rms_lim,smooth_window,N_min);
 
 % add cloud flag (possible values: 0, 1, 2, 3)

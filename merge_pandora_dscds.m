@@ -4,9 +4,9 @@ function merge_pandora_dscds( p_num, year, uvvis, version )
 if ~any([2,4,5]==version), error('Incorrect version number'); end
     
 % UV and VIS measurements
-if strcmp(uvvis,'vis')
+if strcmpi(uvvis,'vis')
     meas_type='OPEN';
-elseif strcmp(uvvis,'vis')
+elseif strcmpi(uvvis,'uv')
     meas_type='U340';
 end
 
@@ -56,7 +56,7 @@ for i=1:length(f_list)
             case 'vis'
                 tmp=read_pandora_vis_v5(filedir,f_list{i});
             case 'uv'
-                error('Add function to read UV data')
+                tmp=read_pandora_uv_v5(filedir,f_list{i});
         end
     end
     
@@ -345,6 +345,72 @@ data = table(dataArray{1:end-1}, 'VariableNames', {'SpecNo','Year','Fractionalda
        'NO2_UVSlColbro','NO2_UVSlErrbro','NO2_UVSlColring','NO2_UVSlErrring','NO2_UVShiftSpectrum','NO2_UVStretchSpectrum1','NO2_UVStretchSpectrum2','HCHORMS','HCHORefZm','HCHOSlColhcho','HCHOSlErrhcho',...
        'HCHOSlColno2','HCHOSlErrno2','HCHOSlColo3','HCHOSlErro3','HCHOSlColo3a','HCHOSlErro3a','HCHOSlColo4','HCHOSlErro4','HCHOSlColbro','HCHOSlErrbro','HCHOSlColring','HCHOSlErrring','HCHOShiftSpectrum',...
        'HCHOStretchSpectrum1','HCHOStretchSpectrum2','Fluxes330','Fluxes340','Fluxes350','Fluxes380','Fluxes440','Fluxes450','Fluxes500','Fluxes550'});
+
+data.Timehhmmss=data.DateDDMMYYYY+timeofday(data.Timehhmmss);
+data.DateTime=data.Timehhmmss;
+
+data.Timehhmmss.Format='HH:mm:ss';
+data.DateTime.Format='dd/MM/uuuu HH:mm:ss';
+
+% round angles
+data.Elevviewingangle=round(data.Elevviewingangle);
+
+end
+
+
+
+function data = read_pandora_uv_v5(path, filename)
+
+%% Initialize variables.
+delimiter = '\t';
+startRow = 3;
+endRow = inf;
+
+%% Format string for each line of text:
+
+formatSpec = '%f%f%f%f%f%f%f%f%{dd/MM/yyyy}D%{HH:mm:ss}D%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%f%[^\n\r]';
+
+%% Open the text file.
+try
+    fileID = fopen([path filename],'r');
+catch
+    error(['Invalid filename ' path filename]);
+end
+
+%% Read columns of data according to format string.
+% This call is based on the structure of the file used to generate this
+% code. If an error occurs for a different file, try regenerating the code
+% from the Import Tool.
+dataArray = textscan(fileID, formatSpec, endRow(1)-startRow(1)+1, 'Delimiter', delimiter, 'HeaderLines', startRow(1)-1, 'ReturnOnError', false);
+for block=2:length(startRow)
+    frewind(fileID);
+    dataArrayBlock = textscan(fileID, formatSpec, endRow(block)-startRow(block)+1, 'Delimiter', delimiter, 'HeaderLines', startRow(block)-1, 'ReturnOnError', false);
+    for col=1:length(dataArray)
+        dataArray{col} = [dataArray{col};dataArrayBlock{col}];
+    end
+end
+
+%% Close the text file.
+fclose(fileID);
+
+%% Post processing for unimportable data.
+% No unimportable data rules were applied during the import, so no post
+% processing code is included. To generate code which works for
+% unimportable data, select unimportable cells in a file and regenerate the
+% script.
+
+%% Create output variable
+data = table(dataArray{1:end-1}, 'VariableNames', {'SpecNo','Year','Fractionalday','Fractionaltime',...
+    'SZA','SolarAzimuthAngle','Elevviewingangle','Azimviewingangle','DateDDMMYYYY','Timehhmmss',...
+    'Tint','TotalExperimentTimesec','NO2_UVRMS','NO2_UVRefZm','NO2_UVSlColno2','NO2_UVSlErrno2',...
+    'NO2_UVSlColno2a','NO2_UVSlErrno2a','NO2_UVSlColo3','NO2_UVSlErro3','NO2_UVSlColo3a',...
+    'NO2_UVSlErro3a','NO2_UVSlColo4','NO2_UVSlErro4','NO2_UVSlColhcho','NO2_UVSlErrhcho',...
+    'NO2_UVSlColbro','NO2_UVSlErrbro','NO2_UVSlColring','NO2_UVSlErrring','NO2_UVShiftSpectrum',...
+    'NO2_UVStretchSpectrum1','NO2_UVStretchSpectrum2','HCHORMS','HCHORefZm','HCHOSlColhcho',...
+    'HCHOSlErrhcho','HCHOSlColno2','HCHOSlErrno2','HCHOSlColo3','HCHOSlErro3','HCHOSlColo3a',...
+    'HCHOSlErro3a','HCHOSlColo4','HCHOSlErro4','HCHOSlColbro','HCHOSlErrbro','HCHOSlColring',...
+    'HCHOSlErrring','HCHOShiftSpectrum','HCHOStretchSpectrum1','HCHOStretchSpectrum2','Fluxes330',...
+    'Fluxes340','Fluxes350','Fluxes380','Fluxes440','Fluxes450','Fluxes500','Fluxes550'});
 
 data.Timehhmmss=data.DateDDMMYYYY+timeofday(data.Timehhmmss);
 data.DateTime=data.Timehhmmss;

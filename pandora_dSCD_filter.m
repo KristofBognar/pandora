@@ -1,4 +1,4 @@
-function [ind_bad_ci, ind_bad_o4, ind_bad_rms] = pandora_dSCD_filter(data,cols_in,rms_lim,smooth_window,N_min)
+function [ind_bad_ci, ind_bad_o4, ind_bad_rms] = pandora_dSCD_filter(data,cols_in,uvvis,rms_lim,smooth_window,N_min)
 % [smooth_ci, smooth_o4, bad_rms] = pandora_dSCD_filter(data,rm_rms,smooth_window,N_min)
 % filter pandora MAX-DOAS dSCDs based on rms and CI, O4 smoothness
 %
@@ -52,9 +52,13 @@ for i=1:length(cols_in)
 end
 
 % calculate color index
-% wavelengths (but not this exact pair) from Wagner et al. 2014, 2016
-ci=data.Fluxes330./data.Fluxes440;
-
+% wavelengths (but not these exact pairs) from Wagner et al. 2014, 2016
+switch uvvis
+    case 'vis'
+        ci=data.Fluxes330./data.Fluxes440;
+    case 'uv'
+        ci=data.Fluxes330./data.Fluxes380;
+end
 % break up measurements by local day (can ignore daylight savings here)
 try
     day_local=day(data.DateTime-hours(5),'dayofyear');
@@ -98,7 +102,15 @@ for i=1:length(N_days)
 
             % smoth data
             smooth_ci(ind)=smooth(data.Fractionalday(ind),ci(ind),frac,'rloess');
-            smooth_o4(ind)=smooth(data.Fractionalday(ind),data.NO2_VisSlColo4(ind),frac,'rloess');
+            
+            switch uvvis
+                case 'vis'
+                    smooth_o4(ind)=smooth(data.Fractionalday(ind),data.NO2_VisSlColo4(ind),...
+                        frac,'rloess');
+                case 'uv'
+                    smooth_o4(ind)=smooth(data.Fractionalday(ind),data.NO2_UVSlColo4(ind),...
+                        frac,'rloess');
+            end                    
             
         end
     end
@@ -108,7 +120,13 @@ end
 % use negative of good values to make sure NaN smooth data registers as
 % bad data (NaN conparison is always false)
 ind_bad_ci=~(abs((ci-smooth_ci)./smooth_ci)<0.1);
-ind_bad_o4=~(abs((data.NO2_VisSlColo4-smooth_o4)./smooth_o4)<=0.2);
+
+switch uvvis
+    case 'vis'
+        ind_bad_o4=~(abs((data.NO2_VisSlColo4-smooth_o4)./smooth_o4)<=0.2);
+    case 'uv'
+        ind_bad_o4=~(abs((data.NO2_UVSlColo4-smooth_o4)./smooth_o4)<=0.2);
+end
 
 fprintf('\n')
 

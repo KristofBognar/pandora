@@ -593,10 +593,12 @@ function write_nc(f_out,uvvis,to_write,elevs_saved,location,columns_new,...
     if strcmp(uvvis,'vis')
         lambda_range='fw425to490nm';
         lambda_range_2='fw338to370nm';
+        lambda_range_hcho='fw336to359nm';
     elseif strcmp(uvvis,'uv')
         lambda_range='fw338to370nm';
+        lambda_range_hcho='fw324to359nm';
     end
-    lambda_range_hcho='fw336to359nm';
+    
     
     %% aerosols
     tmp = netcdf.defGrp(ncid,'aerosol');

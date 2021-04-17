@@ -129,7 +129,7 @@ for i=1:length(steps_list)
         
         % create heipro control files
         date_in=to_write_tmp.DateTime(1);
-        create_retrieval_files_pandora(output_version,dscd_fname,date_in,daily_times,savedir_inp);
+        create_retrieval_files_pandora(output_version,uvvis,dscd_fname,date_in,daily_times,savedir_inp);
         
         % save daily start/end times and dt
         daily_times_all=[daily_times_all; [{datestr(date_in,'yyyymmdd')}, daily_times]];
@@ -155,7 +155,7 @@ for i=1:length(steps_list)
         % create heipro control files
         date_in=to_write_tmp.DateTime(1);
         create_retrieval_files_pandora([output_version(1:end-1) '_short'],...
-                                       dscd_fname,date_in,daily_times,savedir_inp);
+                                       uvvis,dscd_fname,date_in,daily_times,savedir_inp);
         
         % save daily start/end times and dt
         daily_times_all=[daily_times_all; [{datestr(date_in,'yyyymmdd')}, daily_times]];

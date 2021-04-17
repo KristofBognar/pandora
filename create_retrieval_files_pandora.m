@@ -1,4 +1,4 @@
-function create_retrieval_files_pandora(out_folder_name,dscd_fname,date_in,daily_times,fpath)
+function create_retrieval_files_pandora(out_folder_name,uvvis,dscd_fname,date_in,daily_times,fpath)
 % Create daily retrieval settings file for pandora aerosol and NO2 retrievals
 %
 % % % % dSCD files created by reformat_pandora_for_retrievals.m and write_input_HEIPRO.m
@@ -20,6 +20,8 @@ function create_retrieval_files_pandora(out_folder_name,dscd_fname,date_in,daily
 
 if out_folder_name(end)=='/', out_folder_name=out_folder_name(1:end-1); end
 
+out_folder_name=[out_folder_name '_' uvvis];
+
 %% instrument altitude (km above surface, not sea level)
 
 p_num=str2double(out_folder_name(2:4));
@@ -39,10 +41,10 @@ for aer=[1,0]
     %% read template
     if aer
         fid=fopen(['/media/kristof/Windows7_OS/SCIATRAN2/AEROSOL_RETRIEVAL_v-1-2/',...
-                       'IDL_execute/aerosol_retrieval_template_pandora_vis.inp'],'r');
+                       'IDL_execute/aerosol_retrieval_template_pandora_' uvvis '.inp'],'r');
     else
         fid=fopen(['/media/kristof/Windows7_OS/SCIATRAN2/TRACEGAS_RETRIEVAL_v-1-2/',...
-                       'IDL_execute/tracegas_retrieval_template_pandora_vis.inp'],'r');
+                       'IDL_execute/tracegas_retrieval_template_pandora_' uvvis '.inp'],'r');
     end
 
     i = 1;

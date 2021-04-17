@@ -109,7 +109,7 @@ era5_datenum=floor(times/24 + pivot_time);
 try % expver exists: recent data
     
     tmp=double(ncread([era5_loc fname],'expver'));
-    if yr~=yr_now, error('Near real time data found in file'); end
+    %if yr~=yr_now, warning('Near real time data found in file'); end
     
     % reduce array sizes
     % both datasets are the same size, one dataset is all NaN where the
